@@ -1,0 +1,59 @@
+name: rule_position_exit
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 35
+  cooldown_ticks: 4
+
+  rules:
+    - name: sell_up_when_price_high
+      all:
+        - metric: has_up_position
+          operator: is
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.82
+      action: sell_up
+
+    - name: sell_down_when_price_high
+      all:
+        - metric: has_down_position
+          operator: is
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.82
+      action: sell_down
+
+    - name: enter_up_mid_market
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.45
+        - metric: elapsed
+          operator: ">="
+          value: 45
+        - metric: seconds_left
+          operator: ">="
+          value: 45
+      action: buy_up
+      usd_amount: 2
+
+    - name: enter_down_mid_market
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.45
+        - metric: elapsed
+          operator: ">="
+          value: 45
+        - metric: seconds_left
+          operator: ">="
+          value: 45
+      action: buy_down
+      usd_amount: 2
+

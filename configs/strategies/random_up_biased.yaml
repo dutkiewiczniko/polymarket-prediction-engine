@@ -1,0 +1,10 @@
+name: random_up_biased
+type: random
+starting_balance: 100
+order_usd: 1
+
+params:
+  hold_probability: 0.55
+  buy_up_probability: 0.35
+  seed: 1200
+

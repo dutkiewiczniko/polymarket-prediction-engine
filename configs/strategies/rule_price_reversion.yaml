@@ -1,0 +1,33 @@
+name: rule_price_reversion
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 45
+  cooldown_ticks: 5
+
+  rules:
+    - name: expensive_up_buy_down
+      all:
+        - metric: up_price
+          operator: ">="
+          value: 0.72
+        - metric: seconds_left
+          operator: ">="
+          value: 45
+      action: buy_down
+      usd_amount: 2
+
+    - name: cheap_up_buy_up
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.28
+        - metric: seconds_left
+          operator: ">="
+          value: 45
+      action: buy_up
+      usd_amount: 2
+

@@ -1,0 +1,39 @@
+name: rule_early_probe
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 25
+  cooldown_ticks: 12
+
+  rules:
+    - name: early_up_probe
+      all:
+        - metric: elapsed
+          operator: "<="
+          value: 90
+        - metric: up_price
+          operator: "<="
+          value: 0.48
+        - metric: btc_above_price_to_beat
+          operator: is
+          value: true
+      action: buy_up
+      usd_amount: 1
+
+    - name: early_down_probe
+      all:
+        - metric: elapsed
+          operator: "<="
+          value: 90
+        - metric: down_price
+          operator: "<="
+          value: 0.48
+        - metric: btc_below_price_to_beat
+          operator: is
+          value: true
+      action: buy_down
+      usd_amount: 1
+

@@ -1,0 +1,12 @@
+name: momentum_sensitive
+type: momentum_basic
+starting_balance: 100
+order_usd: 1
+
+params:
+  momentum_pct: 0.025
+  min_elapsed_s: 5
+  min_remaining_s: 5
+  min_up_prob: 0.15
+  max_up_prob: 0.85
+

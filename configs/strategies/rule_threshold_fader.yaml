@@ -1,0 +1,39 @@
+name: rule_threshold_fader
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 25
+  cooldown_ticks: 7
+
+  rules:
+    - name: fade_slightly_above_threshold
+      all:
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: ">="
+          value: 0
+        - metric: abs_btc_distance_to_price_to_beat_pct
+          operator: "<="
+          value: 0.04
+        - metric: up_price
+          operator: ">="
+          value: 0.55
+      action: buy_down
+      usd_amount: 2
+
+    - name: fade_slightly_below_threshold
+      all:
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: "<"
+          value: 0
+        - metric: abs_btc_distance_to_price_to_beat_pct
+          operator: "<="
+          value: 0.04
+        - metric: down_price
+          operator: ">="
+          value: 0.55
+      action: buy_up
+      usd_amount: 2
+

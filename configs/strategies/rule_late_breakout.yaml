@@ -1,0 +1,39 @@
+name: rule_late_breakout
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 2
+  max_orders: 20
+  cooldown_ticks: 3
+
+  rules:
+    - name: late_above_threshold_buy_up
+      all:
+        - metric: seconds_left
+          operator: "<="
+          value: 60
+        - metric: btc_above_price_to_beat
+          operator: is
+          value: true
+        - metric: up_price
+          operator: "<="
+          value: 0.90
+      action: buy_up
+      usd_amount: 4
+
+    - name: late_below_threshold_buy_down
+      all:
+        - metric: seconds_left
+          operator: "<="
+          value: 60
+        - metric: btc_below_price_to_beat
+          operator: is
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.90
+      action: buy_down
+      usd_amount: 4
+

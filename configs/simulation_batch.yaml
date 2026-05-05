@@ -4,9 +4,8 @@ markets_folder: data
 market_pattern: btc-updown-5m-*.csv
 output_root: runs
 
-# Use this while testing so it does not run every CSV immediately.
-# Remove this line or set it higher later.
-max_markets: 5
+# Leave blank to run every cleaned market CSV in data/.
+max_markets:
 
 starting_balance: 100
 order_usd: 1
@@ -24,7 +23,90 @@ strategies:
     count: 1
     label: momentum_basic
 
+  - config: configs/strategies/momentum_sensitive.yaml
+    count: 1
+    label: momentum_sensitive
+
+  - config: configs/strategies/momentum_strict.yaml
+    count: 1
+    label: momentum_strict
+
+  - config: configs/strategies/rule_based_example.yaml
+    count: 1
+    label: rule_based_example
+
+  - config: configs/strategies/rule_threshold_chaser.yaml
+    count: 1
+    label: rule_threshold_chaser
+
+  - config: configs/strategies/rule_threshold_fader.yaml
+    count: 1
+    label: rule_threshold_fader
+
+  - config: configs/strategies/rule_price_extreme_lottery.yaml
+    count: 1
+    label: rule_price_extreme_lottery
+
+  - config: configs/strategies/rule_price_extreme_certainty.yaml
+    count: 1
+    label: rule_price_extreme_certainty
+
+  - config: configs/strategies/rule_price_reversion.yaml
+    count: 1
+    label: rule_price_reversion
+
+  - config: configs/strategies/rule_price_momentum.yaml
+    count: 1
+    label: rule_price_momentum
+
+  - config: configs/strategies/rule_price_momentum_fader.yaml
+    count: 1
+    label: rule_price_momentum_fader
+
+  - config: configs/strategies/rule_btc_momentum.yaml
+    count: 1
+    label: rule_btc_momentum
+
+  - config: configs/strategies/rule_late_breakout.yaml
+    count: 1
+    label: rule_late_breakout
+
+  - config: configs/strategies/rule_early_probe.yaml
+    count: 1
+    label: rule_early_probe
+
+  - config: configs/strategies/rule_position_exit.yaml
+    count: 1
+    label: rule_position_exit
+
+  - config: configs/strategies/rule_enter_up_exit_late.yaml
+    count: 1
+    label: rule_enter_up_exit_late
+
+  - config: configs/strategies/rule_enter_down_exit_late.yaml
+    count: 1
+    label: rule_enter_down_exit_late
+
+  - config: configs/strategies/rule_stop_loss_take_profit.yaml
+    count: 1
+    label: rule_stop_loss_take_profit
+
   - config: configs/strategies/random_basic.yaml
-    count: 2
+    count: 5
     label: random_basic
     seed_start: 1000
+
+  - config: configs/strategies/random_active.yaml
+    count: 5
+    label: random_active
+    seed_start: 1100
+
+  - config: configs/strategies/random_up_biased.yaml
+    count: 3
+    label: random_up_biased
+    seed_start: 1200
+
+  - config: configs/strategies/random_down_biased.yaml
+    count: 3
+    label: random_down_biased
+    seed_start: 1300

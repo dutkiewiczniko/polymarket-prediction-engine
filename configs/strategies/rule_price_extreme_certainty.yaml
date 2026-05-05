@@ -1,0 +1,53 @@
+name: rule_price_extreme_certainty
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 2
+  max_orders: 30
+  cooldown_ticks: 8
+
+  rules:
+    - name: buy_near_certain_up
+      all:
+        - metric: up_price
+          operator: ">="
+          value: 0.97
+        - metric: seconds_left
+          operator: "<="
+          value: 75
+      action: buy_up
+      usd_amount: 5
+
+    - name: buy_near_certain_down
+      all:
+        - metric: down_price
+          operator: ">="
+          value: 0.97
+        - metric: seconds_left
+          operator: "<="
+          value: 75
+      action: buy_down
+      usd_amount: 5
+
+    - name: sell_up_when_certainty_breaks
+      all:
+        - metric: has_up_position
+          operator: is
+          value: true
+        - metric: up_price
+          operator: "<="
+          value: 0.88
+      action: sell_up
+
+    - name: sell_down_when_certainty_breaks
+      all:
+        - metric: has_down_position
+          operator: is
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.88
+      action: sell_down
+

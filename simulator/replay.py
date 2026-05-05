@@ -115,13 +115,14 @@ def run_simulation(
         )
 
         decision = strategy.decide(state)
+        decision_usd_amount = decision.usd_amount if decision.usd_amount is not None else order_usd
         events = execute_action(
             portfolio=portfolio,
             action=decision.action,
             timestamp=tick.timestamp,
             up_price=tick.up_price,
             down_price=tick.down_price,
-            usd_amount=order_usd,
+            usd_amount=decision_usd_amount,
             reason=decision.reason,
         )
 
@@ -146,6 +147,7 @@ def run_simulation(
             "balance_before": state.current_balance,
             "action": decision.action,
             "reason": decision.reason,
+            "usd_amount": decision_usd_amount,
             "events_count": len(events),
             "cash_after": portfolio.cash,
             "up_tokens_after": portfolio.up_tokens,

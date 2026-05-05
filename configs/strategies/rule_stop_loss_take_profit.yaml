@@ -1,0 +1,72 @@
+name: rule_stop_loss_take_profit
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 30
+  cooldown_ticks: 5
+
+  rules:
+    - name: take_profit_up
+      all:
+        - metric: has_up_position
+          operator: is
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.75
+      action: sell_up
+
+    - name: stop_loss_up
+      all:
+        - metric: has_up_position
+          operator: is
+          value: true
+        - metric: up_price
+          operator: "<="
+          value: 0.25
+      action: sell_up
+
+    - name: take_profit_down
+      all:
+        - metric: has_down_position
+          operator: is
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.75
+      action: sell_down
+
+    - name: stop_loss_down
+      all:
+        - metric: has_down_position
+          operator: is
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.25
+      action: sell_down
+
+    - name: enter_up_when_discounted
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.40
+        - metric: seconds_left
+          operator: ">="
+          value: 60
+      action: buy_up
+      usd_amount: 2
+
+    - name: enter_down_when_discounted
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.40
+        - metric: seconds_left
+          operator: ">="
+          value: 60
+      action: buy_down
+      usd_amount: 2

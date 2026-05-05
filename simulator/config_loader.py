@@ -2,7 +2,7 @@ from pathlib import Path
 import copy
 import yaml
 
-from simulator.strategies import HoldStrategy, RandomStrategy, MomentumStrategy, BaseStrategy
+from simulator.strategies import HoldStrategy, RandomStrategy, MomentumStrategy, RuleBasedStrategy, BaseStrategy
 
 
 def build_strategy_from_config(cfg: dict) -> BaseStrategy:
@@ -34,6 +34,17 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
             min_remaining_s=float(params.get("min_remaining_s", 10.0)),
             min_up_prob=float(params.get("min_up_prob", 0.30)),
             max_up_prob=float(params.get("max_up_prob", 0.70)),
+        )
+        strategy.name = cfg.get("name", strategy.name)
+        return strategy
+
+    if strategy_type == "rule_based":
+        params = cfg.get("params", {})
+        strategy = RuleBasedStrategy(
+            rules=params.get("rules", []),
+            default_usd_amount=float(params.get("default_usd_amount", cfg.get("order_usd", 1.0))),
+            max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
+            cooldown_ticks=int(params.get("cooldown_ticks", 0)),
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy

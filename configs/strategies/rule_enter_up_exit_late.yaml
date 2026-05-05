@@ -1,0 +1,32 @@
+name: rule_enter_up_exit_late
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 2
+  max_orders: 8
+  cooldown_ticks: 15
+
+  rules:
+    - name: exit_up_late
+      all:
+        - metric: has_up_position
+          operator: is
+          value: true
+        - metric: seconds_left
+          operator: "<="
+          value: 90
+      action: sell_up
+
+    - name: enter_up_early
+      all:
+        - metric: elapsed
+          operator: "<="
+          value: 30
+        - metric: up_price
+          operator: "<="
+          value: 0.65
+      action: buy_up
+      usd_amount: 5
+

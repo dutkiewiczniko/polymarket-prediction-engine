@@ -1,0 +1,33 @@
+name: rule_price_momentum_fader
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 35
+  cooldown_ticks: 6
+
+  rules:
+    - name: fade_up_price_spike
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 5
+        - metric: up_price
+          operator: ">="
+          value: 0.60
+      action: buy_down
+      usd_amount: 2
+
+    - name: fade_down_price_spike
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 5
+        - metric: down_price
+          operator: ">="
+          value: 0.60
+      action: buy_up
+      usd_amount: 2
+

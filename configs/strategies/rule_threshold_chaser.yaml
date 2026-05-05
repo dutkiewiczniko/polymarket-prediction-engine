@@ -1,0 +1,39 @@
+name: rule_threshold_chaser
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 2
+  max_orders: 35
+  cooldown_ticks: 4
+
+  rules:
+    - name: btc_above_threshold_buy_up
+      all:
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: ">="
+          value: 0
+        - metric: abs_btc_distance_to_price_to_beat_pct
+          operator: "<="
+          value: 0.08
+        - metric: seconds_left
+          operator: ">="
+          value: 20
+      action: buy_up
+      usd_amount: 3
+
+    - name: btc_below_threshold_buy_down
+      all:
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: "<"
+          value: 0
+        - metric: abs_btc_distance_to_price_to_beat_pct
+          operator: "<="
+          value: 0.08
+        - metric: seconds_left
+          operator: ">="
+          value: 20
+      action: buy_down
+      usd_amount: 3
+

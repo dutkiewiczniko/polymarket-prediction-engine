@@ -1,0 +1,49 @@
+name: rule_price_extreme_lottery
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 0.5
+  max_orders: 40
+  cooldown_ticks: 10
+
+  rules:
+    - name: buy_deep_cheap_up
+      when:
+        metric: up_price
+        operator: "<="
+        value: 0.03
+      action: buy_up
+      usd_amount: 0.5
+
+    - name: buy_deep_cheap_down
+      when:
+        metric: down_price
+        operator: "<="
+        value: 0.03
+      action: buy_down
+      usd_amount: 0.5
+
+    - name: buy_cheap_up
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.10
+        - metric: seconds_left
+          operator: ">="
+          value: 30
+      action: buy_up
+      usd_amount: 1
+
+    - name: buy_cheap_down
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.10
+        - metric: seconds_left
+          operator: ">="
+          value: 30
+      action: buy_down
+      usd_amount: 1
+

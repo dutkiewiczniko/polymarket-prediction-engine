@@ -1,0 +1,39 @@
+name: rule_btc_momentum
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 45
+  cooldown_ticks: 4
+
+  rules:
+    - name: btc_up_momentum_buy_up
+      all:
+        - metric: btc_pct_change
+          operator: ">="
+          value: 0.025
+        - metric: up_price
+          operator: "<="
+          value: 0.80
+        - metric: seconds_left
+          operator: ">="
+          value: 20
+      action: buy_up
+      usd_amount: 2
+
+    - name: btc_down_momentum_buy_down
+      all:
+        - metric: btc_pct_change
+          operator: "<="
+          value: -0.025
+        - metric: down_price
+          operator: "<="
+          value: 0.80
+        - metric: seconds_left
+          operator: ">="
+          value: 20
+      action: buy_down
+      usd_amount: 2
+

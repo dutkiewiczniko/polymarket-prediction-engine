@@ -1,0 +1,56 @@
+name: rule_based_example
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 30
+  cooldown_ticks: 5
+
+  rules:
+    - name: up_price_jumped_buy_up
+      when:
+        metric: up_price_pct_change
+        operator: ">="
+        value: 5
+      action: buy_up
+      usd_amount: 2
+
+    - name: btc_above_threshold_buy_up
+      all:
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: ">="
+          value: 0
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: "<="
+          value: 0.05
+      action: buy_up
+      usd_amount: 3
+
+    - name: btc_below_threshold_buy_down
+      all:
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: "<"
+          value: 0
+        - metric: btc_distance_to_price_to_beat_pct
+          operator: ">="
+          value: -0.05
+      action: buy_down
+      usd_amount: 3
+
+    - name: up_almost_certain_buy_up
+      when:
+        metric: up_price
+        operator: ">="
+        value: 0.99
+      action: buy_up
+      usd_amount: 10
+
+    - name: up_lottery_ticket_buy_up
+      when:
+        metric: up_price
+        operator: "<="
+        value: 0.01
+      action: buy_up
+      usd_amount: 1

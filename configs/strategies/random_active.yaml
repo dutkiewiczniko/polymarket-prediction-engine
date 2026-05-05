@@ -1,0 +1,10 @@
+name: random_active
+type: random
+starting_balance: 100
+order_usd: 1
+
+params:
+  hold_probability: 0.35
+  buy_up_probability: 0.325
+  seed: 1100
+
