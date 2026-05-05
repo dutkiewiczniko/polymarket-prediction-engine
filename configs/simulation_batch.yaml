@@ -1,0 +1,30 @@
+batch_id: first_batch_test
+
+markets_folder: data
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+
+# Use this while testing so it does not run every CSV immediately.
+# Remove this line or set it higher later.
+max_markets: 5
+
+starting_balance: 100
+order_usd: 1
+
+# Leave this blank to infer UP/DOWN from final BTC versus price_to_beat.
+# Later we should read the actual resolved Polymarket outcome where possible.
+final_outcome:
+
+strategies:
+  - config: configs/strategies/hold.yaml
+    count: 1
+    label: hold
+
+  - config: configs/strategies/momentum_basic.yaml
+    count: 1
+    label: momentum_basic
+
+  - config: configs/strategies/random_basic.yaml
+    count: 2
+    label: random_basic
+    seed_start: 1000

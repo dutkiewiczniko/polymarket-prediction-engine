@@ -1,0 +1,9 @@
+name: random_basic
+type: random
+starting_balance: 100
+order_usd: 1
+
+params:
+  hold_probability: 0.70
+  buy_up_probability: 0.15
+  seed: 42

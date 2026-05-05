@@ -1,0 +1,11 @@
+name: momentum_basic
+type: momentum_basic
+starting_balance: 100
+order_usd: 1
+
+params:
+  momentum_pct: 0.10
+  min_elapsed_s: 15
+  min_remaining_s: 10
+  min_up_prob: 0.30
+  max_up_prob: 0.70

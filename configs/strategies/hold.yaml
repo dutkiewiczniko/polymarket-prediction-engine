@@ -1,0 +1,4 @@
+name: hold
+type: hold
+starting_balance: 100
+order_usd: 1
