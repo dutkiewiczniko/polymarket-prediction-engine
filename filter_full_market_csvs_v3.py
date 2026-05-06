@@ -160,7 +160,7 @@ def main():
 
     CLEAN_DIR.mkdir(parents=True, exist_ok=True)
 
-    csv_files = sorted(UNCLEANED_DIR.glob(CSV_PATTERN))
+    csv_files = sorted(UNCLEANED_DIR.rglob(CSV_PATTERN))
 
     if not csv_files:
         print(f"No files found in {UNCLEANED_DIR} matching {CSV_PATTERN!r}")
@@ -175,6 +175,8 @@ def main():
     print()
 
     for csv_path in csv_files:
+        source_label = str(csv_path.relative_to(UNCLEANED_DIR))
+
         try:
             ok, message = is_accepted_market_file(csv_path)
         except Exception as e:
@@ -192,14 +194,14 @@ def main():
                 action = "copied"
 
             accepted += 1
-            print(f"[ACCEPTED] {csv_path.name} -> {action} | {message}")
+            print(f"[ACCEPTED] {source_label} -> {action} | {message}")
         else:
             rejected += 1
             reject_rows.append({
-                "filename": csv_path.name,
+                "filename": source_label,
                 "reason": message,
             })
-            print(f"[REJECTED] {csv_path.name} | {message}")
+            print(f"[REJECTED] {source_label} | {message}")
 
     if reject_rows:
         with REJECT_LOG_PATH.open("w", newline="", encoding="utf-8") as f:

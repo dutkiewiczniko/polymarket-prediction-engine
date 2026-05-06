@@ -91,7 +91,8 @@ def run_batch(batch_config_path: str | Path = "configs/simulation_batch.yaml") -
         runs/<batch_id>/
           summary.csv
           trajectories/
-            <market_slug>__<strategy_name>.csv
+            <strategy_name>/
+              <market_slug>.csv
     """
 
     batch_config_path = Path(batch_config_path)
@@ -123,11 +124,29 @@ def run_batch(batch_config_path: str | Path = "configs/simulation_batch.yaml") -
     trajectories_dir.mkdir(parents=True, exist_ok=True)
 
     summary_path = batch_dir / "summary.csv"
-
-    summary_rows = []
+    summary_fieldnames = [
+        "status",
+        "job_no",
+        "total_jobs",
+        "market_file",
+        "strategy_name",
+        "final_outcome",
+        "final_balance",
+        "starting_balance",
+        "total_reward",
+        "rows_written",
+        "market_path",
+        "strategy_config",
+        "strategy_run_name",
+        "output_csv",
+        "error_type",
+        "error_message",
+    ]
 
     total_jobs = len(markets) * len(strategy_runs)
     job_no = 0
+    completed_jobs = 0
+    failed_jobs = 0
 
     print(f"Batch: {batch_id}")
     print(f"Markets: {len(markets)}")
@@ -135,48 +154,83 @@ def run_batch(batch_config_path: str | Path = "configs/simulation_batch.yaml") -
     print(f"Total simulations: {total_jobs}")
     print()
 
-    for market_path in markets:
-        market_slug = safe_name(market_path.stem)
+    with summary_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=summary_fieldnames)
+        writer.writeheader()
+        f.flush()
 
-        for strategy_entry in strategy_runs:
-            job_no += 1
+        for market_path in markets:
+            market_slug = safe_name(market_path.stem)
 
-            strategy_cfg = strategy_entry["config"]
-            strategy = build_strategy_from_config(strategy_cfg)
+            for strategy_entry in strategy_runs:
+                job_no += 1
 
-            starting_balance = float(strategy_cfg.get("starting_balance", starting_balance_default))
-            order_usd = float(strategy_cfg.get("order_usd", order_usd_default))
+                strategy_cfg = strategy_entry["config"]
 
-            strategy_name = safe_name(strategy_entry["name"])
-            out_name = f"{market_slug}__{strategy_name}.csv"
-            output_csv = trajectories_dir / out_name
+                starting_balance = float(strategy_cfg.get("starting_balance", starting_balance_default))
+                order_usd = float(strategy_cfg.get("order_usd", order_usd_default))
 
-            print(f"[{job_no}/{total_jobs}] {market_path.name} -> {strategy_name}")
+                strategy_name = safe_name(strategy_entry["name"])
+                strategy_dir = trajectories_dir / strategy_name
+                strategy_dir.mkdir(parents=True, exist_ok=True)
+                output_csv = strategy_dir / f"{market_slug}.csv"
 
-            result = run_simulation(
-                market_csv=market_path,
-                strategy=strategy,
-                output_csv=output_csv,
-                starting_balance=starting_balance,
-                order_usd=order_usd,
-                final_outcome=final_outcome,
-            )
+                print(f"[{job_no}/{total_jobs}] {market_path.name} -> {strategy_name}")
 
-            result_dict = asdict(result)
-            result_dict["market_path"] = str(market_path)
-            result_dict["strategy_config"] = strategy_entry["source_config"]
-            result_dict["strategy_run_name"] = strategy_name
-            result_dict["output_csv"] = str(output_csv)
-            summary_rows.append(result_dict)
+                try:
+                    strategy = build_strategy_from_config(strategy_cfg)
+                    result = run_simulation(
+                        market_csv=market_path,
+                        strategy=strategy,
+                        output_csv=output_csv,
+                        starting_balance=starting_balance,
+                        order_usd=order_usd,
+                        final_outcome=final_outcome,
+                    )
 
-    if summary_rows:
-        with summary_path.open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=list(summary_rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(summary_rows)
+                    result_dict = asdict(result)
+                    summary_row = {
+                        "status": "ok",
+                        "job_no": job_no,
+                        "total_jobs": total_jobs,
+                        "market_path": str(market_path),
+                        "strategy_config": strategy_entry["source_config"],
+                        "strategy_run_name": strategy_name,
+                        "output_csv": str(output_csv),
+                        "error_type": "",
+                        "error_message": "",
+                        **result_dict,
+                    }
+                    completed_jobs += 1
+                except Exception as e:
+                    summary_row = {
+                        "status": "failed",
+                        "job_no": job_no,
+                        "total_jobs": total_jobs,
+                        "market_file": str(market_path),
+                        "strategy_name": strategy_name,
+                        "final_outcome": "",
+                        "final_balance": "",
+                        "starting_balance": starting_balance,
+                        "total_reward": "",
+                        "rows_written": "",
+                        "market_path": str(market_path),
+                        "strategy_config": strategy_entry["source_config"],
+                        "strategy_run_name": strategy_name,
+                        "output_csv": str(output_csv),
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                    }
+                    failed_jobs += 1
+                    print(f"  FAILED: {type(e).__name__}: {e}")
+
+                writer.writerow(summary_row)
+                f.flush()
 
     print()
     print("Batch complete.")
+    print(f"Completed simulations: {completed_jobs}")
+    print(f"Failed simulations: {failed_jobs}")
     print(f"Summary written to: {summary_path}")
     print(f"Trajectories written to: {trajectories_dir}")
 

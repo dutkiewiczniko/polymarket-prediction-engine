@@ -1,4 +1,4 @@
-batch_id: first_batch_test
+batch_id: second_batch_test
 
 markets_folder: data
 market_pattern: btc-updown-5m-*.csv
