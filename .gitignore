@@ -5,5 +5,7 @@ __pycache__/
 runs/
 data/
 data_uncleaned/
+datasets/
+simulator_ready_markets/
 
 .env

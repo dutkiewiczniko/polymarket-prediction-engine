@@ -1,7 +1,13 @@
-batch_id: second_batch_test
+batch_id: third_batch_test
 
-markets_folder: data
+# Market input folder. For simulator-ready filtered files, use:
+# markets_folder: simulator_ready_markets
+markets_folder: simulator_ready_markets
 market_pattern: btc-updown-5m-*.csv
+
+# Runs are written to:
+#   <output_root>/<batch_id>/summary.csv
+#   <output_root>/<batch_id>/trajectories/<strategy_name>/<market_id>.csv
 output_root: runs
 
 # Leave blank to run every cleaned market CSV in data/.
