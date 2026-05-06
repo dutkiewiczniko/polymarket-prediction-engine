@@ -83,7 +83,15 @@ def expand_strategy_runs(batch_cfg: dict) -> list[dict]:
     return expanded
 
 
-def run_batch(batch_config_path: str | Path = "configs/simulation_batch.yaml") -> Path:
+def run_batch(
+    batch_config_path: str | Path = "configs/simulation_batch.yaml",
+    *,
+    markets_folder: str | Path | None = None,
+    market_pattern: str | None = None,
+    output_root: str | Path | None = None,
+    batch_id: str | None = None,
+    max_markets: int | None = None,
+) -> Path:
     """Run many strategies across many market CSVs.
 
     Output structure:
@@ -98,20 +106,20 @@ def run_batch(batch_config_path: str | Path = "configs/simulation_batch.yaml") -
     batch_config_path = Path(batch_config_path)
     batch_cfg = load_yaml(batch_config_path)
 
-    batch_id = batch_cfg.get("batch_id")
+    batch_id = batch_id or batch_cfg.get("batch_id")
     if not batch_id:
         batch_id = datetime.now().strftime("batch_%Y%m%d_%H%M%S")
 
     batch_id = safe_name(batch_id)
 
-    markets_folder = Path(batch_cfg.get("markets_folder", "data"))
-    market_pattern = batch_cfg.get("market_pattern", "btc-updown-5m-*.csv")
-    output_root = Path(batch_cfg.get("output_root", "runs"))
+    markets_folder = Path(markets_folder or batch_cfg.get("markets_folder", "data"))
+    market_pattern = market_pattern or batch_cfg.get("market_pattern", "btc-updown-5m-*.csv")
+    output_root = Path(output_root or batch_cfg.get("output_root", "runs"))
 
     starting_balance_default = float(batch_cfg.get("starting_balance", 100.0))
     order_usd_default = float(batch_cfg.get("order_usd", 1.0))
     final_outcome = batch_cfg.get("final_outcome")
-    max_markets = batch_cfg.get("max_markets")
+    max_markets = max_markets if max_markets is not None else batch_cfg.get("max_markets")
 
     markets = discover_market_csvs(markets_folder, market_pattern)
     if max_markets is not None:
@@ -149,6 +157,9 @@ def run_batch(batch_config_path: str | Path = "configs/simulation_batch.yaml") -
     failed_jobs = 0
 
     print(f"Batch: {batch_id}")
+    print(f"Markets folder: {markets_folder}")
+    print(f"Market pattern: {market_pattern}")
+    print(f"Output folder: {batch_dir}")
     print(f"Markets: {len(markets)}")
     print(f"Strategy runs: {len(strategy_runs)}")
     print(f"Total simulations: {total_jobs}")
