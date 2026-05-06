@@ -117,28 +117,17 @@ _tick_file = None
 _tick_writer = None
 _tick_lock = threading.Lock()  # protects _tick_writer/_tick_file
 
-# Stable market-only schema for recorded live market ticks. Simulated
-# portfolio/action/reward fields are added later by the offline simulator.
+# Raw market schema expected by the cleaner, replay simulator, and feature builder.
 MARKET_CSV_HEADER = [
-    "time_fraction_elapsed",
+    "timestamp",
+    "unix_time",
+    "seconds_left",
+    "elapsed",
     "up_price",
-    "up_price_change_0_5s",
-    "up_price_change_1s",
-    "up_price_change_5s",
-    "up_price_change_15s",
-    "up_price_change_30s",
-    "btc_return_0_5s",
-    "btc_return_1s",
-    "btc_return_5s",
-    "btc_return_15s",
-    "btc_return_30s",
-    "btc_return_60s",
-    "btc_volatility_5s",
-    "btc_volatility_15s",
-    "btc_volatility_30s",
-    "btc_volatility_60s",
-    "btc_distance_to_beat_pct",
-    "market_confidence_gap",
+    "down_price",
+    "btc_binance",
+    "btc_chainlink",
+    "price_to_beat",
 ]
 
 
@@ -198,7 +187,7 @@ def format_csv_value(value):
 
 
 def _market_row_dict():
-    """Snapshot current market state and market-only engineered features."""
+    """Snapshot current raw market state for replayable CSV output."""
     now = time.time()
 
     with lock:
@@ -212,50 +201,27 @@ def _market_row_dict():
 
     seconds_left = (market_end - now) if market_end else ""
     elapsed = (now - market_start) if market_start else ""
-    time_fraction_elapsed = (elapsed / 300.0) if isinstance(elapsed, (int, float)) else ""
 
     up_price = up_series[-1][1] if up_series else None
     down_price = down_series[-1][1] if down_series else None
     btc_binance = btc_binance_series[-1][1] if btc_binance_series else None
     btc_chainlink = btc_chainlink_series[-1][1] if btc_chainlink_series else None
-    btc_price = btc_chainlink if btc_chainlink is not None else btc_binance
-    btc_series = btc_chainlink_series if btc_chainlink_series else btc_binance_series
-
-    btc_distance_to_beat_pct = ""
-    market_confidence_gap = ""
-
-    if btc_price is not None and price_to_beat not in (None, 0):
-        btc_distance_to_beat = btc_price - price_to_beat
-        btc_distance_to_beat_pct = btc_distance_to_beat / price_to_beat
-        btc_above_price_to_beat = 1 if btc_price > price_to_beat else 0
-        if up_price is not None:
-            market_confidence_gap = btc_above_price_to_beat - up_price
 
     return {
-        "time_fraction_elapsed": time_fraction_elapsed,
+        "timestamp": datetime.fromtimestamp(now).strftime("%H:%M:%S.%f")[:-3],
+        "unix_time": now,
+        "seconds_left": seconds_left,
+        "elapsed": elapsed,
         "up_price": up_price,
-        "up_price_change_0_5s": raw_change(up_series, now, 0.5),
-        "up_price_change_1s": raw_change(up_series, now, 1.0),
-        "up_price_change_5s": raw_change(up_series, now, 5.0),
-        "up_price_change_15s": raw_change(up_series, now, 15.0),
-        "up_price_change_30s": raw_change(up_series, now, 30.0),
-        "btc_return_0_5s": decimal_return(btc_series, now, 0.5),
-        "btc_return_1s": decimal_return(btc_series, now, 1.0),
-        "btc_return_5s": decimal_return(btc_series, now, 5.0),
-        "btc_return_15s": decimal_return(btc_series, now, 15.0),
-        "btc_return_30s": decimal_return(btc_series, now, 30.0),
-        "btc_return_60s": decimal_return(btc_series, now, 60.0),
-        "btc_volatility_5s": short_return_volatility(btc_series, now, 5.0),
-        "btc_volatility_15s": short_return_volatility(btc_series, now, 15.0),
-        "btc_volatility_30s": short_return_volatility(btc_series, now, 30.0),
-        "btc_volatility_60s": short_return_volatility(btc_series, now, 60.0),
-        "btc_distance_to_beat_pct": btc_distance_to_beat_pct,
-        "market_confidence_gap": market_confidence_gap,
+        "down_price": down_price,
+        "btc_binance": btc_binance,
+        "btc_chainlink": btc_chainlink,
+        "price_to_beat": price_to_beat,
     }
 
 
-def write_market_row():
-    """Append one market-only tick row to the active per-market CSV."""
+def write_market_row(**_ignored_event_fields):
+    """Append one raw market tick row to the active per-market CSV."""
     row = _market_row_dict()
 
     with _tick_lock:
