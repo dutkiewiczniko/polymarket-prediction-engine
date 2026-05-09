@@ -7,5 +7,6 @@ data/
 data_uncleaned/
 datasets/
 simulator_ready_markets/
+models/
 
 .env

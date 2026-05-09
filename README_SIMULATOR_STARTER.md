@@ -1,12 +1,12 @@
-\
 # BTC Simulator Starter
 
-Copy these files into the root of `btc-forecast-engine`.
+Simulator and training tools now live under `scripts/`, with small compatibility
+wrappers left at the repo root for common commands.
 
 ## Install dependency
 
 ```bash
-pip install pyyaml
+pip install -r requirements.txt
 ```
 
 ## Run one replay
@@ -15,6 +15,15 @@ Example:
 
 ```bash
 python run_replay.py ^
+  --market-csv data/btc-updown-5m-1234567890.csv ^
+  --strategy-config configs/strategies/momentum_basic.yaml ^
+  --output-csv runs/momentum_basic_market_001.csv
+```
+
+Equivalent direct script path:
+
+```bash
+python scripts/simulation/run_replay.py ^
   --market-csv data/btc-updown-5m-1234567890.csv ^
   --strategy-config configs/strategies/momentum_basic.yaml ^
   --output-csv runs/momentum_basic_market_001.csv
