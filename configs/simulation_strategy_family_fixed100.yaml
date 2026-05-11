@@ -1,0 +1,67 @@
+batch_id: strategy_family_fixed100_ready_markets
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 100
+order_usd: 1
+final_outcome:
+compound_balance: false
+
+strategies:
+  - config: configs/strategies/family_fixed100/down_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_down_bias_chaser
+
+  - config: configs/strategies/family_fixed100/up_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_up_bias_chaser
+
+  - config: configs/strategies/family_fixed100/neutral_chaser_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: family_neutral_chaser
+
+  - config: configs/strategies/family_fixed100/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: family_cheap_lottery_only
+
+  - config: configs/strategies/family_fixed100/hybrid_price_signal_tp095_cheap0025.yaml
+    count: 1
+    label: family_hybrid_price_signal
+
+  - config: configs/strategies/family_fixed100/down_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_down_bias_fader
+
+  - config: configs/strategies/family_fixed100/up_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_up_bias_fader
+
+  - config: configs/strategies/family_fixed100/neutral_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_neutral_fader
+
+  - config: configs/strategies/rule_price_momentum.yaml
+    count: 1
+    label: family_rule_price_momentum
+
+  - config: configs/strategies/rule_price_momentum_fader.yaml
+    count: 1
+    label: family_rule_price_momentum_fader
+
+  - config: configs/strategies/rule_threshold_chaser.yaml
+    count: 1
+    label: family_threshold_chaser
+
+  - config: configs/strategies/rule_threshold_fader.yaml
+    count: 1
+    label: family_threshold_fader
+
+  - config: configs/strategies/rule_btc_momentum.yaml
+    count: 1
+    label: family_btc_momentum_chaser
+
+  - config: configs/strategies/rule_late_breakout.yaml
+    count: 1
+    label: family_late_breakout
