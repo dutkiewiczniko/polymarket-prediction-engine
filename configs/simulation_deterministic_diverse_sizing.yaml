@@ -1,0 +1,874 @@
+batch_id: deterministic_diverse_sizing_suite
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 100
+order_usd: 1
+final_outcome:
+
+strategies:
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp075_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp075_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp08_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp08_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp09_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp09_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_tp095_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_tp095_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp075_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp075_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp08_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp08_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp09_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp09_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_chaser_careful_tp095_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_chaser_careful_tp095_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp075_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp075_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp08_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp08_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp09_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp09_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_tp095_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_tp095_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp075_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp075_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp08_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp08_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp09_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp09_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap0015_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap0015_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap0015_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap0025_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap0025_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap0025_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap005_tok30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap005_balpct10.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/down_bias_fader_careful_tp095_cheap005_balpct30.yaml
+    count: 1
+    label: down_bias_fader_careful_tp095_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp075_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp075_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp08_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp08_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp09_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp09_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_tp095_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_tp095_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp075_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp075_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp08_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp08_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp09_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp09_cheap005_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap0015_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap0015_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap0015_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap0015_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap0015_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap0015_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap0025_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap0025_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap0025_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap0025_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap0025_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap0025_balpct30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap005_tok30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap005_tok30
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap005_balpct10.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap005_balpct10
+
+  - config: configs/strategies/deterministic_diverse_sizing/hybrid_price_signal_careful_tp095_cheap005_balpct30.yaml
+    count: 1
+    label: hybrid_price_signal_careful_tp095_cheap005_balpct30

@@ -136,6 +136,56 @@ class RuleBasedStrategy(BaseStrategy):
                 if action in {"buy_up", "buy_down"} and self.max_orders is not None and state.orders_placed >= self.max_orders:
                     return StrategyDecision("hold", "max buy orders reached")
                 usd_amount = rule.get("usd_amount", self.default_usd_amount)
+                if action in {"buy_up", "buy_down"} and rule.get("token_amount") is not None:
+                    price_metric = "up_price" if action == "buy_up" else "down_price"
+                    price = as_float(metrics.get(price_metric))
+                    token_amount = as_float(rule.get("token_amount"))
+                    if price is None or token_amount is None:
+                        return StrategyDecision("hold", "cannot size token_amount order")
+                    usd_amount = price * token_amount
+                if action in {"buy_up", "buy_down"} and rule.get("balance_pct") is not None:
+                    price_metric = "up_price" if action == "buy_up" else "down_price"
+                    price = as_float(metrics.get(price_metric))
+                    balance_pct = as_float(rule.get("balance_pct"))
+                    available_cash = as_float(metrics.get("cash"))
+                    if price is None or balance_pct is None or available_cash is None:
+                        return StrategyDecision("hold", "cannot size balance_pct order")
+                    token_amount = available_cash * balance_pct
+                    usd_amount = price * token_amount
+                if action in {"buy_up", "buy_down"} and rule.get("cash_usd_pct") is not None:
+                    cash_usd_pct = as_float(rule.get("cash_usd_pct"))
+                    available_cash = as_float(metrics.get("cash"))
+                    if cash_usd_pct is None or available_cash is None:
+                        return StrategyDecision("hold", "cannot size cash_usd_pct order")
+                    usd_amount = available_cash * cash_usd_pct
+                if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
+                    # Scale tokens by current balance as before, but allow an effective cap.
+                    # This means low balances can stay conservative, and only once balance
+                    # grows past a threshold will the order size increase.
+                    price_metric = "up_price" if action == "buy_up" else "down_price"
+                    price = as_float(metrics.get(price_metric))
+                    token_basis = as_float(rule.get("balance_scaled_token_amount"))
+                    current_balance = as_float(metrics.get("current_balance"))
+                    if price is None or token_basis is None or current_balance is None:
+                        return StrategyDecision("hold", "cannot size balance_scaled_token_amount order")
+                    effective_balance = current_balance
+                    if rule.get("balance_scale_cap") is not None:
+                        cap = as_float(rule.get("balance_scale_cap"))
+                        if cap is None:
+                            return StrategyDecision("hold", "invalid balance_scale_cap")
+                        effective_balance = min(effective_balance, cap)
+                    token_amount = token_basis * effective_balance / 100.0
+                    usd_amount = price * token_amount
+                if action in {"buy_up", "buy_down"} and rule.get("max_market_spend") is not None:
+                    max_market_spend = as_float(rule.get("max_market_spend"))
+                    market_spend_used = as_float(metrics.get("market_spend_used"))
+                    if max_market_spend is None or market_spend_used is None:
+                        return StrategyDecision("hold", "invalid max_market_spend")
+                    remaining_budget = max_market_spend - market_spend_used
+                    if remaining_budget <= 0:
+                        return StrategyDecision("hold", "market spend cap reached")
+                    if usd_amount is not None and usd_amount > remaining_budget:
+                        return StrategyDecision("hold", "order exceeds market spend cap")
                 return StrategyDecision(
                     action=action,
                     reason=str(rule.get("name", f"rule matched: {action}")),
@@ -171,6 +221,8 @@ class RuleBasedStrategy(BaseStrategy):
             "elapsed": tick.elapsed,
             "cash": state.cash,
             "current_balance": state.current_balance,
+            "market_start_balance": state.market_start_balance,
+            "market_spend_used": state.market_spend_used,
             "up_tokens": state.up_tokens,
             "down_tokens": state.down_tokens,
             "has_up_position": state.up_tokens > 0,
