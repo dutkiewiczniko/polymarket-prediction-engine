@@ -96,10 +96,12 @@ def run_simulation(
 
     resolved_outcome = infer_final_outcome(ticks, fallback=final_outcome)
     portfolio = Portfolio(cash=starting_balance)
+    market_start_balance = starting_balance
 
     rows = []
     last_action = "none"
     orders_placed = 0
+    market_spend_used = 0.0
 
     for tick in ticks:
         current_balance = portfolio.mark_to_market(tick.up_price, tick.down_price)
@@ -110,6 +112,8 @@ def run_simulation(
             up_tokens=portfolio.up_tokens,
             down_tokens=portfolio.down_tokens,
             current_balance=current_balance,
+            market_start_balance=market_start_balance,
+            market_spend_used=market_spend_used,
             last_action=last_action,
             orders_placed=orders_placed,
         )
@@ -128,6 +132,7 @@ def run_simulation(
 
         if events:
             orders_placed += len(events)
+            market_spend_used += sum(event.usd_amount for event in events if event.action == "buy")
 
         balance_after = portfolio.mark_to_market(tick.up_price, tick.down_price)
 
@@ -149,6 +154,8 @@ def run_simulation(
             "reason": decision.reason,
             "usd_amount": decision_usd_amount,
             "events_count": len(events),
+            "market_spend_used_before": market_spend_used - sum(event.usd_amount for event in events if event.action == "buy"),
+            "market_spend_used_after": market_spend_used,
             "cash_after": portfolio.cash,
             "up_tokens_after": portfolio.up_tokens,
             "down_tokens_after": portfolio.down_tokens,

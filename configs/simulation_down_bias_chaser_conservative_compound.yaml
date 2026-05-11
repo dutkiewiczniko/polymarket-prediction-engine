@@ -1,0 +1,83 @@
+batch_id: down_bias_chaser_conservative_compound_suite
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 100
+order_usd: 1
+final_outcome:
+compound_balance: true
+
+strategies:
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_small_tp095_cheap0001.yaml
+    count: 1
+    label: down_bias_chaser_careful_small_tp095_cheap0001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_small_tp095_cheap0005.yaml
+    count: 1
+    label: down_bias_chaser_careful_small_tp095_cheap0005
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_small_tp095_cheap001.yaml
+    count: 1
+    label: down_bias_chaser_careful_small_tp095_cheap001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_small_tp0975_cheap0001.yaml
+    count: 1
+    label: down_bias_chaser_careful_small_tp0975_cheap0001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_small_tp0975_cheap0005.yaml
+    count: 1
+    label: down_bias_chaser_careful_small_tp0975_cheap0005
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_small_tp0975_cheap001.yaml
+    count: 1
+    label: down_bias_chaser_careful_small_tp0975_cheap001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_medium_tp095_cheap0001.yaml
+    count: 1
+    label: down_bias_chaser_careful_medium_tp095_cheap0001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_medium_tp095_cheap0005.yaml
+    count: 1
+    label: down_bias_chaser_careful_medium_tp095_cheap0005
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_medium_tp095_cheap001.yaml
+    count: 1
+    label: down_bias_chaser_careful_medium_tp095_cheap001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_medium_tp0975_cheap0001.yaml
+    count: 1
+    label: down_bias_chaser_careful_medium_tp0975_cheap0001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_medium_tp0975_cheap0005.yaml
+    count: 1
+    label: down_bias_chaser_careful_medium_tp0975_cheap0005
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_medium_tp0975_cheap001.yaml
+    count: 1
+    label: down_bias_chaser_careful_medium_tp0975_cheap001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_patient_tp095_cheap0001.yaml
+    count: 1
+    label: down_bias_chaser_careful_patient_tp095_cheap0001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_patient_tp095_cheap0005.yaml
+    count: 1
+    label: down_bias_chaser_careful_patient_tp095_cheap0005
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_patient_tp095_cheap001.yaml
+    count: 1
+    label: down_bias_chaser_careful_patient_tp095_cheap001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_patient_tp0975_cheap0001.yaml
+    count: 1
+    label: down_bias_chaser_careful_patient_tp0975_cheap0001
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_patient_tp0975_cheap0005.yaml
+    count: 1
+    label: down_bias_chaser_careful_patient_tp0975_cheap0005
+
+  - config: configs/strategies/down_bias_chaser_conservative_compound/down_bias_chaser_careful_patient_tp0975_cheap001.yaml
+    count: 1
+    label: down_bias_chaser_careful_patient_tp0975_cheap001
