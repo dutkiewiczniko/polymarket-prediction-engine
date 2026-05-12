@@ -1,0 +1,35 @@
+batch_id: token_decrease_cheap_tail_comparison
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 400
+order_usd: 1
+final_outcome:
+compound_balance: false
+
+strategies:
+  - config: configs/strategies/token_decrease_cheap_tail_comparison/token_decrease_step05_d10_old_cheap.yaml
+    count: 1
+    label: token_decrease_step05_d10_old_cheap
+
+  - config: configs/strategies/token_decrease_cheap_tail_comparison/token_decrease_step05_d10_cheap_5to1.yaml
+    count: 1
+    label: token_decrease_step05_d10_cheap_5to1
+
+  - config: configs/strategies/token_decrease_cheap_tail_comparison/token_decrease_step05_d15_old_cheap.yaml
+    count: 1
+    label: token_decrease_step05_d15_old_cheap
+
+  - config: configs/strategies/token_decrease_cheap_tail_comparison/token_decrease_step05_d15_cheap_5to1.yaml
+    count: 1
+    label: token_decrease_step05_d15_cheap_5to1
+
+  - config: configs/strategies/token_decrease_cheap_tail_comparison/token_decrease_step10_d15_old_cheap.yaml
+    count: 1
+    label: token_decrease_step10_d15_old_cheap
+
+  - config: configs/strategies/token_decrease_cheap_tail_comparison/token_decrease_step10_d15_cheap_5to1.yaml
+    count: 1
+    label: token_decrease_step10_d15_cheap_5to1

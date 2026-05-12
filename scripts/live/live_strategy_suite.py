@@ -121,6 +121,12 @@ def parse_args():
     parser.add_argument("--port", type=int, default=5052, help="Local dashboard port.")
     parser.add_argument("--max-markets", type=int, default=0, help="Stop after this many completed markets. 0 means run forever.")
     parser.add_argument(
+        "--trajectory-log-mode",
+        choices=["all", "actions"],
+        default="all",
+        help="Write every strategy tick to trajectory CSVs, or only rows where an action/event occurred.",
+    )
+    parser.add_argument(
         "--max-target-fallback-elapsed",
         type=float,
         default=5.0,
@@ -416,10 +422,17 @@ class LiveStrategySuite:
             strategy_dir = self.trajectory_dir / slugify(runtime.name)
             strategy_dir.mkdir(parents=True, exist_ok=True)
             output_path = strategy_dir / f"{market_slug}.csv"
+            rows_to_write = runtime.rows
+            if self.args.trajectory_log_mode == "actions":
+                rows_to_write = [
+                    row
+                    for row in runtime.rows
+                    if row.get("action") != "hold" or int(row.get("events_count") or 0) > 0
+                ]
             with output_path.open("w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=TRAJECTORY_COLUMNS)
                 writer.writeheader()
-                writer.writerows(runtime.rows)
+                writer.writerows(rows_to_write)
 
             summary_row = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -434,7 +447,7 @@ class LiveStrategySuite:
                 "final_balance": final_balance,
                 "starting_balance": runtime.starting_balance,
                 "total_reward": total_reward,
-                "rows_written": len(runtime.rows),
+                "rows_written": len(rows_to_write),
                 "orders_placed": runtime.orders_placed,
                 "buy_up_events": runtime.event_counts["buy_up"],
                 "buy_down_events": runtime.event_counts["buy_down"],
@@ -645,14 +658,26 @@ class LiveStrategySuite:
         for runtime in self.strategies:
             if not runtime.portfolio:
                 balance = runtime.starting_balance
+                cash = runtime.starting_balance
+                up_tokens = 0.0
+                down_tokens = 0.0
             elif up_price is None or down_price is None:
                 balance = runtime.portfolio.cash
+                cash = runtime.portfolio.cash
+                up_tokens = runtime.portfolio.up_tokens
+                down_tokens = runtime.portfolio.down_tokens
             else:
                 balance = runtime.portfolio.mark_to_market(up_price, down_price)
+                cash = runtime.portfolio.cash
+                up_tokens = runtime.portfolio.up_tokens
+                down_tokens = runtime.portfolio.down_tokens
             rows.append({
                 "strategy_name": runtime.name,
                 "balance": balance,
                 "reward": balance - runtime.starting_balance,
+                "cash": cash,
+                "up_tokens": up_tokens,
+                "down_tokens": down_tokens,
                 "orders": runtime.orders_placed,
                 "last_action": runtime.last_action,
             })
@@ -1111,7 +1136,7 @@ DASHBOARD_HTML = """
     <div>
       <h3>Live Leaderboard</h3>
       <table>
-        <thead><tr><th>Strategy</th><th>Reward</th><th>Balance</th><th>Orders</th><th>Last</th></tr></thead>
+        <thead><tr><th>Strategy</th><th>Reward</th><th>Balance</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
         <tbody id="leaderboard"></tbody>
       </table>
     </div>
@@ -1212,7 +1237,7 @@ socket.on('tick', d => {
   document.getElementById('dist').textContent = d.distance == null ? '--' : fmtMoney(d.distance);
   document.getElementById('slug').textContent = d.current_slug || '--';
   document.getElementById('leaderboard').innerHTML = (d.leaderboard || []).slice(0, 25).map(r =>
-    '<tr><td>'+r.strategy_name+'</td><td>'+fmtMoney(r.reward)+'</td><td>'+fmtMoney(r.balance)+'</td><td>'+r.orders+'</td><td>'+r.last_action+'</td></tr>'
+    '<tr><td>'+r.strategy_name+'</td><td>'+fmtMoney(r.reward)+'</td><td>'+fmtMoney(r.balance)+'</td><td>'+fmtMoney(r.cash)+'</td><td>'+fmtNum(r.up_tokens,2)+'</td><td>'+fmtNum(r.down_tokens,2)+'</td><td>'+r.orders+'</td><td>'+r.last_action+'</td></tr>'
   ).join('');
   document.getElementById('actions').innerHTML = (d.latest_actions || []).slice(0, 16).map(a =>
     '<tr><td>'+a.timestamp+'</td><td>'+a.strategy_name+'</td><td>'+a.action+'</td><td>'+a.reason+'</td></tr>'

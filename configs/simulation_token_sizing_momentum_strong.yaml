@@ -1,0 +1,95 @@
+batch_id: token_sizing_momentum_strong
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 400
+order_usd: 1
+final_outcome:
+compound_balance: false
+
+strategies:
+  - config: configs/strategies/token_sizing_momentum_strong/token_decrease_step05_d5.yaml
+    count: 1
+    label: token_decrease_step05_d5
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_decrease_step05_d10.yaml
+    count: 1
+    label: token_decrease_step05_d10
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_decrease_step05_d15.yaml
+    count: 1
+    label: token_decrease_step05_d15
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_decrease_step10_d5.yaml
+    count: 1
+    label: token_decrease_step10_d5
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_decrease_step10_d10.yaml
+    count: 1
+    label: token_decrease_step10_d10
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_decrease_step10_d15.yaml
+    count: 1
+    label: token_decrease_step10_d15
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_increase_step005_m50.yaml
+    count: 1
+    label: token_increase_step005_m50
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_increase_step005_m75.yaml
+    count: 1
+    label: token_increase_step005_m75
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_increase_step005_m100.yaml
+    count: 1
+    label: token_increase_step005_m100
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_increase_step01_m50.yaml
+    count: 1
+    label: token_increase_step01_m50
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_increase_step01_m75.yaml
+    count: 1
+    label: token_increase_step01_m75
+
+  - config: configs/strategies/token_sizing_momentum_strong/token_increase_step01_m100.yaml
+    count: 1
+    label: token_increase_step01_m100
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_25pct_1ticks.yaml
+    count: 1
+    label: momentum_swing_25pct_1ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_25pct_2ticks.yaml
+    count: 1
+    label: momentum_swing_25pct_2ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_25pct_3ticks.yaml
+    count: 1
+    label: momentum_swing_25pct_3ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_5pct_1ticks.yaml
+    count: 1
+    label: momentum_swing_5pct_1ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_5pct_2ticks.yaml
+    count: 1
+    label: momentum_swing_5pct_2ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_5pct_3ticks.yaml
+    count: 1
+    label: momentum_swing_5pct_3ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_10pct_1ticks.yaml
+    count: 1
+    label: momentum_swing_10pct_1ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_10pct_2ticks.yaml
+    count: 1
+    label: momentum_swing_10pct_2ticks
+
+  - config: configs/strategies/token_sizing_momentum_strong/momentum_swing_10pct_3ticks.yaml
+    count: 1
+    label: momentum_swing_10pct_3ticks

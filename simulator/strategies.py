@@ -118,6 +118,9 @@ class RuleBasedStrategy(BaseStrategy):
         self._last_up_price: float | None = None
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
+        self._up_price_history: list[float] = []
+        self._down_price_history: list[float] = []
+        self._btc_history: list[float] = []
         self._ticks_since_trade = cooldown_ticks
 
     def decide(self, state: DecisionState) -> StrategyDecision:
@@ -208,9 +211,15 @@ class RuleBasedStrategy(BaseStrategy):
             "up_price_distance_from_even": distance(tick.up_price, 0.5),
             "down_price_distance_from_even": distance(tick.down_price, 0.5),
             "up_price_pct_change": pct_change(tick.up_price, self._last_up_price),
+            "up_price_pct_change_2_ticks": pct_change_from_history(tick.up_price, self._up_price_history, 2),
+            "up_price_pct_change_3_ticks": pct_change_from_history(tick.up_price, self._up_price_history, 3),
             "down_price_pct_change": pct_change(tick.down_price, self._last_down_price),
+            "down_price_pct_change_2_ticks": pct_change_from_history(tick.down_price, self._down_price_history, 2),
+            "down_price_pct_change_3_ticks": pct_change_from_history(tick.down_price, self._down_price_history, 3),
             "btc_price": btc,
             "btc_pct_change": pct_change(btc, self._last_btc),
+            "btc_pct_change_2_ticks": pct_change_from_history(btc, self._btc_history, 2),
+            "btc_pct_change_3_ticks": pct_change_from_history(btc, self._btc_history, 3),
             "btc_distance_to_price_to_beat": distance(btc, tick.price_to_beat),
             "btc_distance_to_price_to_beat_pct": distance_pct(btc, tick.price_to_beat),
             "abs_btc_distance_to_price_to_beat": abs_distance(btc, tick.price_to_beat),
@@ -236,6 +245,9 @@ class RuleBasedStrategy(BaseStrategy):
         self._last_up_price = as_float(metrics.get("up_price"))
         self._last_down_price = as_float(metrics.get("down_price"))
         self._last_btc = as_float(metrics.get("btc_price"))
+        append_history(self._up_price_history, self._last_up_price)
+        append_history(self._down_price_history, self._last_down_price)
+        append_history(self._btc_history, self._last_btc)
 
     def _rule_matches(self, rule: dict[str, Any], metrics: dict[str, float | bool | None]) -> bool:
         if "all" in rule:
@@ -294,6 +306,19 @@ def pct_change(current: float | None, previous: float | None) -> float | None:
     if current is None or previous is None or previous == 0:
         return None
     return ((current - previous) / previous) * 100.0
+
+
+def pct_change_from_history(current: float | None, history: list[float], ticks_back: int) -> float | None:
+    if current is None or ticks_back <= 0 or len(history) < ticks_back:
+        return None
+    return pct_change(current, history[-ticks_back])
+
+
+def append_history(history: list[float], value: float | None, max_len: int = 3) -> None:
+    if value is None:
+        return
+    history.append(value)
+    del history[:-max_len]
 
 
 def distance(value: float | None, target: float | None) -> float | None:
