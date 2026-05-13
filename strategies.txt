@@ -53,6 +53,11 @@ Try variations of momentum strategies
 Maybe if up stays at .6 and doesnt move and we have large
 amount of tokens then sell?
 		
+if holding up & up above .5 & up down trends: sell up
+or at least part
+
+when buying cheap shares, look at the btc distance and time left
+then either buy cheap one or certain one
 
 hedge bets
 
