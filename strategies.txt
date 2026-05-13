@@ -1,0 +1,64 @@
+if waiting for price<0.025, wait x seconds after the 
+threshold is passed, if price decreases, wait x/2 seconds
+etc. 
+Strategy variation:
+	- buy more when price moves like (cheap0025):
+	975 -> 985 -> 99 
+	e.g. +20 tokens each step.
+
+family hybrid config:
+	-tp099/98
+	-cheap01/02
+	-up if btc is above price to beat	
+	if up_price is >= 60
+
+Token_decrease:
+	Max_orders: 300, balance = 400
+	-tp95
+	-cheap .025; increase token per order by 20
+	for each .01 decrease in price
+
+	
+	
+	-up if btc above ptb and up_price <= 85
+		if btc stays above ptb,
+		increase order amount 5/10 tokens per
+		.1/.05 rise in up_price, starting at 20
+		tokens at original purchase
+
+Token_increase:
+	Max_orders: 300, balance = 400
+	-tp95
+	-cheap .025; increase token per order by 20
+	for each .01 decrease in price
+	
+	
+	-up if btc above ptb and up_price <= 85
+		if btc stays above ptb,
+		decrease order amount 5/10 tokens per
+		.1/.05 decrease in up_price, 
+		
+		with this order quantity:
+			(1-price)*50tokens
+
+
+Try variations of momentum strategies 
+	e.g. swing of 2.5%/5/10% in price
+		from last 1/2/3 ticks
+
+(1-price)*100tokens
+90: .1
+90: .2
+
+Maybe if up stays at .6 and doesnt move and we have large
+amount of tokens then sell?
+		
+if holding up & up above .5 & up down trends: sell up
+or at least part
+
+when buying cheap shares, look at the btc distance and time left
+then either buy cheap one or certain one
+
+hedge bets
+
+

@@ -280,26 +280,28 @@ def build_family_size_pivot(summary_df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def pick_sample_plot_rows(summary_df: pd.DataFrame, seed: int, max_plots: int) -> list[dict]:
+def pick_sample_plot_rows(summary_df: pd.DataFrame, seed: int, max_plots: int, plots_per_strategy: int = 5) -> list[dict]:
     ok_df = summary_df[summary_df["status"].fillna("ok").eq("ok")].copy()
     if ok_df.empty or "output_csv" not in ok_df.columns:
         return []
 
     ok_df = ok_df[ok_df["output_csv"].fillna("").astype(str).ne("")]
-    ok_df["strategy_family"] = ok_df["strategy_key"].map(strategy_family)
+    ok_df = ok_df.sort_values(["strategy_key", "total_reward"], ascending=[True, False])
 
-    rng = random.Random(seed)
     samples = []
-    for family, group in sorted(ok_df.groupby("strategy_family", dropna=False), key=lambda item: str(item[0])):
+    for strategy_key, group in sorted(ok_df.groupby("strategy_key", dropna=False), key=lambda item: str(item[0])):
+        picked = 0
         rows = group.to_dict("records")
-        rng.shuffle(rows)
         for row in rows:
             output_csv = Path(str(row.get("output_csv", "")))
             if output_csv.exists():
-                row["strategy_family"] = family
+                row["strategy_family"] = strategy_family(str(strategy_key))
                 samples.append(row)
-                break
-        if len(samples) >= max_plots:
+                picked += 1
+                if picked >= plots_per_strategy:
+                    break
+        if max_plots and len(samples) >= max_plots:
+            samples = samples[:max_plots]
             break
     return samples
 
@@ -943,8 +945,8 @@ def render_report(
     </section>
 
     <section>
-      <h2>Random Sample Trajectory Plots</h2>
-      <p class="muted">One random trajectory per strategy family. Generated parameter variations are grouped together.</p>
+      <h2>Top Market Trajectory Plots</h2>
+      <p class="muted">Top five markets by reward for each strategy, using that strategy's saved trajectory CSV.</p>
       {sample_plots_html(sample_plot_rows)}
     </section>
 
