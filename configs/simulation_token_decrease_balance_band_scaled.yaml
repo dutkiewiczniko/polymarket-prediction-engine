@@ -1,0 +1,47 @@
+batch_id: token_decrease_balance_band_scaled
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+# This is the real/master balance that compounds across markets.
+starting_balance: 1000
+order_usd: 1
+final_outcome:
+compound_balance: true
+
+# [min_total_balance, max_total_balance, effective_market_balance]
+# Order sizes use balance_scaled_token_amount * effective_market_balance / 100.
+effective_market_balance_bands:
+  - [31.25, 62.5, 3]
+  - [62.5, 125, 6]
+  - [125, 250, 12]
+  - [250, 500, 25]
+  - [500, 1000, 50]
+  - [1000, 2000, 100]
+  - [2000, 4000, 200]
+  - [4000, 8000, 400]
+  - [8000, 16000, 800]
+  - [16000, 32000, 1600]
+  - [32000, 64000, 3200]
+  - [64000, 128000, 6400]
+  - [128000, 256000, 12800]
+  - [256000, 512000, 25600]
+  - [512000, 1024000, 51200]
+  - [1024000, 2048000, 102400]
+
+# If balance is outside the bands, do not place market exposure.
+effective_market_balance_default: 0
+
+strategies:
+  - config: configs/strategies/token_decrease_balance_band_scaled/token_decrease_step05_d10_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step05_d10_cheap_5to1_band_scaled
+
+  - config: configs/strategies/token_decrease_balance_band_scaled/token_decrease_step05_d15_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step05_d15_cheap_5to1_band_scaled
+
+  - config: configs/strategies/token_decrease_balance_band_scaled/token_decrease_step10_d15_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step10_d15_cheap_5to1_band_scaled

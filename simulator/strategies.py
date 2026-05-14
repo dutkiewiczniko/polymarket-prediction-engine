@@ -162,16 +162,17 @@ class RuleBasedStrategy(BaseStrategy):
                         return StrategyDecision("hold", "cannot size cash_usd_pct order")
                     usd_amount = available_cash * cash_usd_pct
                 if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
-                    # Scale tokens by current balance as before, but allow an effective cap.
-                    # This means low balances can stay conservative, and only once balance
-                    # grows past a threshold will the order size increase.
+                    # Scale tokens from the fixed market-start balance. In compounded
+                    # simulations this is the effective band balance selected before
+                    # the market starts, so mark-to-market swings inside a market do
+                    # not recursively increase order size.
                     price_metric = "up_price" if action == "buy_up" else "down_price"
                     price = as_float(metrics.get(price_metric))
                     token_basis = as_float(rule.get("balance_scaled_token_amount"))
-                    current_balance = as_float(metrics.get("current_balance"))
-                    if price is None or token_basis is None or current_balance is None:
+                    scale_balance = as_float(metrics.get("market_start_balance"))
+                    if price is None or token_basis is None or scale_balance is None:
                         return StrategyDecision("hold", "cannot size balance_scaled_token_amount order")
-                    effective_balance = current_balance
+                    effective_balance = scale_balance
                     if rule.get("balance_scale_cap") is not None:
                         cap = as_float(rule.get("balance_scale_cap"))
                         if cap is None:

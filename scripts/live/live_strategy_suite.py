@@ -32,8 +32,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from simulator.config_loader import build_strategy_from_config, load_yaml
 from simulator.execution import execute_action
+from simulator.batch import resolve_effective_market_balance
 from simulator.models import DecisionState, MarketTick
 from simulator.portfolio import Portfolio
+from simulator.strategies import StrategyDecision
 
 
 GAMMA_API = "https://gamma-api.polymarket.com"
@@ -80,8 +82,10 @@ TRAJECTORY_COLUMNS = [
     "up_tokens_after",
     "down_tokens_after",
     "balance_after",
+    "master_balance_before_market",
     "market_simulated_starting_balance",
     "market_simulated_final_balance",
+    "master_balance_after_market",
     "final_outcome",
     "total_reward",
 ]
@@ -97,6 +101,9 @@ SUMMARY_COLUMNS = [
     "price_to_beat_source",
     "final_balance",
     "starting_balance",
+    "master_balance_before_market",
+    "market_simulated_starting_balance",
+    "master_balance_after_market",
     "total_reward",
     "rows_written",
     "orders_placed",
@@ -117,6 +124,11 @@ def parse_args():
     )
     parser.add_argument("--strategy-pattern", default="*.yaml", help="Glob pattern inside the strategy folder.")
     parser.add_argument("--starting-balance", type=float, default=100.0, help="Paper balance per strategy per market.")
+    parser.add_argument(
+        "--balance-config",
+        default="",
+        help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances.",
+    )
     parser.add_argument("--run-id", default="", help="Optional run folder name under runs/live_strategy_suite.")
     parser.add_argument("--port", type=int, default=5052, help="Local dashboard port.")
     parser.add_argument("--max-markets", type=int, default=0, help="Stop after this many completed markets. 0 means run forever.")
@@ -275,6 +287,9 @@ class StrategyRuntime:
     config_path: Path
     config: dict
     starting_balance: float
+    master_balance: float = 0.0
+    master_balance_before_market: float = 0.0
+    market_starting_balance: float = 0.0
     name: str = ""
     strategy: object = None
     portfolio: Portfolio = None
@@ -286,10 +301,19 @@ class StrategyRuntime:
 
     def __post_init__(self):
         self.name = self.config.get("name") or self.config_path.stem
+        self.master_balance = self.starting_balance
+        self.master_balance_before_market = self.starting_balance
+        self.market_starting_balance = self.starting_balance
 
-    def reset_for_market(self):
+    def reset_for_market(self, market_starting_balance: float | None = None):
+        self.master_balance_before_market = self.master_balance
+        self.market_starting_balance = (
+            float(market_starting_balance)
+            if market_starting_balance is not None
+            else self.starting_balance
+        )
         self.strategy = build_strategy_from_config(self.config)
-        self.portfolio = Portfolio(cash=self.starting_balance)
+        self.portfolio = Portfolio(cash=self.market_starting_balance)
         self.market_spend_used = 0.0
         self.last_action = "none"
         self.orders_placed = 0
@@ -304,6 +328,13 @@ class LiveStrategySuite:
         self.running = True
         self.completed_markets = 0
         self.strategy_folder = Path(args.strategy_folder)
+        self.balance_cfg = load_yaml(args.balance_config) if args.balance_config else {}
+        self.compound_balance = bool(args.balance_config)
+        self.base_starting_balance = float(
+            self.balance_cfg.get("starting_balance", args.starting_balance)
+            if self.compound_balance
+            else args.starting_balance
+        )
         self.strategies = self.load_strategies()
 
         run_id = args.run_id or f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{slugify(self.strategy_folder.name)}"
@@ -344,7 +375,7 @@ class LiveStrategySuite:
         if not paths:
             raise FileNotFoundError(f"No strategy files matched {self.args.strategy_pattern!r} in {self.strategy_folder}")
         return [
-            StrategyRuntime(path, load_yaml(path), float(self.args.starting_balance))
+            StrategyRuntime(path, load_yaml(path), self.base_starting_balance)
             for path in paths
         ]
 
@@ -358,7 +389,11 @@ class LiveStrategySuite:
         self.end_market()
         self.current_market = market
         for runtime in self.strategies:
-            runtime.reset_for_market()
+            market_starting_balance = runtime.starting_balance
+            if self.compound_balance:
+                effective_balance = resolve_effective_market_balance(runtime.master_balance, self.balance_cfg)
+                market_starting_balance = effective_balance if effective_balance is not None else runtime.master_balance
+            runtime.reset_for_market(market_starting_balance)
 
         market_path = self.market_data_dir / f"{market['slug']}.csv"
         self.market_file = market_path.open("w", newline="", encoding="utf-8")
@@ -384,7 +419,16 @@ class LiveStrategySuite:
         print("=" * 80)
         print(f"Market #{self.state['markets_seen']}: {market['question']}")
         print(f"Strategies: {len(self.strategies)} from {self.strategy_folder}")
-        print(f"Paper balance per strategy: {self.args.starting_balance:.2f}")
+        if self.compound_balance:
+            active = [runtime.market_starting_balance for runtime in self.strategies]
+            print(f"Compound balance config: {self.args.balance_config}")
+            print(
+                f"Master balance range: {min(runtime.master_balance_before_market for runtime in self.strategies):.2f}"
+                f"-{max(runtime.master_balance_before_market for runtime in self.strategies):.2f}"
+            )
+            print(f"Effective market balance range: {min(active):.2f}-{max(active):.2f}")
+        else:
+            print(f"Paper balance per strategy: {self.args.starting_balance:.2f}")
         if market.get("price_to_beat") is not None:
             print(f"Price to beat: {market['price_to_beat']:.2f} ({market.get('price_to_beat_source')})")
         else:
@@ -411,11 +455,14 @@ class LiveStrategySuite:
         completed_rows = []
 
         for runtime in self.strategies:
-            final_balance = runtime.portfolio.resolve(final_outcome) if runtime.portfolio else runtime.starting_balance
-            total_reward = final_balance - runtime.starting_balance
+            final_balance = runtime.portfolio.resolve(final_outcome) if runtime.portfolio else runtime.market_starting_balance
+            total_reward = final_balance - runtime.market_starting_balance
+            if self.compound_balance:
+                runtime.master_balance = max(0.0, runtime.master_balance_before_market + total_reward)
 
             for row in runtime.rows:
                 row["market_simulated_final_balance"] = final_balance
+                row["master_balance_after_market"] = runtime.master_balance
                 row["final_outcome"] = final_outcome
                 row["total_reward"] = total_reward
 
@@ -446,6 +493,9 @@ class LiveStrategySuite:
                 "price_to_beat_source": runtime.rows[-1].get("price_to_beat_source", "") if runtime.rows else "",
                 "final_balance": final_balance,
                 "starting_balance": runtime.starting_balance,
+                "master_balance_before_market": runtime.master_balance_before_market,
+                "market_simulated_starting_balance": runtime.market_starting_balance,
+                "master_balance_after_market": runtime.master_balance,
                 "total_reward": total_reward,
                 "rows_written": len(rows_to_write),
                 "orders_placed": runtime.orders_placed,
@@ -543,12 +593,15 @@ class LiveStrategySuite:
                 up_tokens=runtime.portfolio.up_tokens,
                 down_tokens=runtime.portfolio.down_tokens,
                 current_balance=current_balance,
-                market_start_balance=runtime.starting_balance,
+                market_start_balance=runtime.market_starting_balance,
                 market_spend_used=runtime.market_spend_used,
                 last_action=runtime.last_action,
                 orders_placed=runtime.orders_placed,
             )
-            decision = runtime.strategy.decide(state)
+            if tick.seconds_left is not None and tick.seconds_left <= 0:
+                decision = StrategyDecision("hold", "market closed")
+            else:
+                decision = runtime.strategy.decide(state)
             usd_amount = decision.usd_amount if decision.usd_amount is not None else float(runtime.config.get("order_usd", 1.0))
             spend_before = runtime.market_spend_used
             events = execute_action(
@@ -595,8 +648,10 @@ class LiveStrategySuite:
                 "up_tokens_after": runtime.portfolio.up_tokens,
                 "down_tokens_after": runtime.portfolio.down_tokens,
                 "balance_after": balance_after,
-                "market_simulated_starting_balance": runtime.starting_balance,
+                "master_balance_before_market": runtime.master_balance_before_market,
+                "market_simulated_starting_balance": runtime.market_starting_balance,
                 "market_simulated_final_balance": "",
+                "master_balance_after_market": "",
                 "final_outcome": "",
                 "total_reward": "",
             })
@@ -657,8 +712,8 @@ class LiveStrategySuite:
         rows = []
         for runtime in self.strategies:
             if not runtime.portfolio:
-                balance = runtime.starting_balance
-                cash = runtime.starting_balance
+                balance = runtime.market_starting_balance
+                cash = runtime.market_starting_balance
                 up_tokens = 0.0
                 down_tokens = 0.0
             elif up_price is None or down_price is None:
@@ -674,7 +729,10 @@ class LiveStrategySuite:
             rows.append({
                 "strategy_name": runtime.name,
                 "balance": balance,
-                "reward": balance - runtime.starting_balance,
+                "reward": balance - runtime.market_starting_balance,
+                "master_balance": runtime.master_balance,
+                "master_balance_before_market": runtime.master_balance_before_market,
+                "market_starting_balance": runtime.market_starting_balance,
                 "cash": cash,
                 "up_tokens": up_tokens,
                 "down_tokens": down_tokens,
@@ -1136,7 +1194,7 @@ DASHBOARD_HTML = """
     <div>
       <h3>Live Leaderboard</h3>
       <table>
-        <thead><tr><th>Strategy</th><th>Reward</th><th>Balance</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
+        <thead><tr><th>Strategy</th><th>Reward</th><th>Market Bal</th><th>Master</th><th>Eff Start</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
         <tbody id="leaderboard"></tbody>
       </table>
     </div>
@@ -1237,7 +1295,7 @@ socket.on('tick', d => {
   document.getElementById('dist').textContent = d.distance == null ? '--' : fmtMoney(d.distance);
   document.getElementById('slug').textContent = d.current_slug || '--';
   document.getElementById('leaderboard').innerHTML = (d.leaderboard || []).slice(0, 25).map(r =>
-    '<tr><td>'+r.strategy_name+'</td><td>'+fmtMoney(r.reward)+'</td><td>'+fmtMoney(r.balance)+'</td><td>'+fmtMoney(r.cash)+'</td><td>'+fmtNum(r.up_tokens,2)+'</td><td>'+fmtNum(r.down_tokens,2)+'</td><td>'+r.orders+'</td><td>'+r.last_action+'</td></tr>'
+    '<tr><td>'+r.strategy_name+'</td><td>'+fmtMoney(r.reward)+'</td><td>'+fmtMoney(r.balance)+'</td><td>'+fmtMoney(r.master_balance)+'</td><td>'+fmtMoney(r.market_starting_balance)+'</td><td>'+fmtMoney(r.cash)+'</td><td>'+fmtNum(r.up_tokens,2)+'</td><td>'+fmtNum(r.down_tokens,2)+'</td><td>'+r.orders+'</td><td>'+r.last_action+'</td></tr>'
   ).join('');
   document.getElementById('actions').innerHTML = (d.latest_actions || []).slice(0, 16).map(a =>
     '<tr><td>'+a.timestamp+'</td><td>'+a.strategy_name+'</td><td>'+a.action+'</td><td>'+a.reason+'</td></tr>'
@@ -1286,7 +1344,11 @@ def main():
     print("=" * 50)
     print(f"Strategy folder: {args.strategy_folder}")
     print(f"Strategies:      {len(suite.strategies)}")
-    print(f"Start balance:   {args.starting_balance:.2f} per strategy per market")
+    if args.balance_config:
+        print(f"Balance config:  {args.balance_config}")
+        print(f"Start balance:   {suite.base_starting_balance:.2f} master balance per strategy")
+    else:
+        print(f"Start balance:   {args.starting_balance:.2f} per strategy per market")
     print(f"Target fallback: first {args.max_target_fallback_elapsed:.1f}s only")
     print(f"Dashboard:       http://localhost:{args.port}")
     print(f"Summary page:    http://localhost:{args.port}/summary")
