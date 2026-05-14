@@ -8,5 +8,21 @@ data_uncleaned/
 datasets/
 simulator_ready_markets/
 models/
+analysis/
+market_data/
+simready2/
+simready3/
+market_data_rejections_from_total_uncleaned.csv
+simulator_ready_market_rejections_from_data.csv
+simulator_ready_market_rejections_from_uncleaned.csv
+
+# Generated strategy sweeps.
+configs/strategies/deterministic_diverse/
+configs/strategies/deterministic_diverse_sizing/
+configs/strategies/down_bias_chaser_balance_scaled/
+configs/strategies/down_bias_chaser_balance_scaled_rerun_top/
+configs/strategies/down_bias_chaser_capped_token_compound/
+configs/strategies/down_bias_chaser_conservative_compound/
+configs/strategies/down_bias_chaser_pct_compound/
 
 .env
