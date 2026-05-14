@@ -8,7 +8,7 @@ from simulator.config_loader import load_strategy_from_yaml
 from simulator.execution import execute_action
 from simulator.models import MarketTick, DecisionState, SimulationResult
 from simulator.portfolio import Portfolio
-from simulator.strategies import BaseStrategy
+from simulator.strategies import BaseStrategy, StrategyDecision
 
 
 def parse_float(value):
@@ -118,7 +118,10 @@ def run_simulation(
             orders_placed=orders_placed,
         )
 
-        decision = strategy.decide(state)
+        if tick.seconds_left is not None and tick.seconds_left <= 0:
+            decision = StrategyDecision("hold", "market closed")
+        else:
+            decision = strategy.decide(state)
         decision_usd_amount = decision.usd_amount if decision.usd_amount is not None else order_usd
         events = execute_action(
             portfolio=portfolio,

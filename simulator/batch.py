@@ -49,9 +49,14 @@ def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> 
         return None
 
     for band in bands:
-        min_balance = band.get("min_total_balance")
-        max_balance = band.get("max_total_balance")
-        simulated_balance = band.get("simulated_balance")
+        if isinstance(band, (list, tuple)):
+            min_balance = band[0] if len(band) > 0 else None
+            max_balance = band[1] if len(band) > 1 else None
+            simulated_balance = band[2] if len(band) > 2 else None
+        else:
+            min_balance = band.get("min_total_balance")
+            max_balance = band.get("max_total_balance")
+            simulated_balance = band.get("simulated_balance")
         if simulated_balance is None:
             continue
 
@@ -59,6 +64,9 @@ def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> 
         max_ok = max_balance is None or master_balance < float(max_balance)
         if min_ok and max_ok:
             return min(master_balance, float(simulated_balance))
+
+    if "effective_market_balance_default" in batch_cfg:
+        return min(master_balance, float(batch_cfg.get("effective_market_balance_default") or 0.0))
 
     return min(master_balance, float(batch_cfg.get("starting_balance", 100.0)))
 
