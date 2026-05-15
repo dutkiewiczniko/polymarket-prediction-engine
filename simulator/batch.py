@@ -32,6 +32,51 @@ def discover_market_csvs(markets_folder: str | Path, pattern: str = "btc-updown-
     return files
 
 
+def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> float | None:
+    def apply_cap(value: float) -> float:
+        cap = batch_cfg.get("effective_market_balance_cap")
+        if cap is None:
+            return value
+        return min(value, float(cap))
+
+    pct = batch_cfg.get("effective_market_balance_pct")
+    if pct is not None:
+        simulated_balance = master_balance * float(pct)
+        min_balance = batch_cfg.get("effective_market_balance_min")
+        max_balance = batch_cfg.get("effective_market_balance_max")
+        if min_balance is not None:
+            simulated_balance = max(simulated_balance, float(min_balance))
+        if max_balance is not None:
+            simulated_balance = min(simulated_balance, float(max_balance))
+        return min(master_balance, apply_cap(simulated_balance))
+
+    bands = batch_cfg.get("effective_market_balance_bands")
+    if not bands:
+        return None
+
+    for band in bands:
+        if isinstance(band, (list, tuple)):
+            min_balance = band[0] if len(band) > 0 else None
+            max_balance = band[1] if len(band) > 1 else None
+            simulated_balance = band[2] if len(band) > 2 else None
+        else:
+            min_balance = band.get("min_total_balance")
+            max_balance = band.get("max_total_balance")
+            simulated_balance = band.get("simulated_balance")
+        if simulated_balance is None:
+            continue
+
+        min_ok = min_balance is None or master_balance >= float(min_balance)
+        max_ok = max_balance is None or master_balance < float(max_balance)
+        if min_ok and max_ok:
+            return min(master_balance, apply_cap(float(simulated_balance)))
+
+    if "effective_market_balance_default" in batch_cfg:
+        return min(master_balance, apply_cap(float(batch_cfg.get("effective_market_balance_default") or 0.0)))
+
+    return min(master_balance, apply_cap(float(batch_cfg.get("starting_balance", 100.0))))
+
+
 def expand_strategy_runs(batch_cfg: dict) -> list[dict]:
     """Expand strategy entries into individual runnable configs.
 
@@ -120,6 +165,7 @@ def run_batch(
     order_usd_default = float(batch_cfg.get("order_usd", 1.0))
     final_outcome = batch_cfg.get("final_outcome")
     max_markets = max_markets if max_markets is not None else batch_cfg.get("max_markets")
+    compound_balance = bool(batch_cfg.get("compound_balance", False))
 
     markets = discover_market_csvs(markets_folder, market_pattern)
     if max_markets is not None:
@@ -147,6 +193,12 @@ def run_batch(
         "strategy_config",
         "strategy_run_name",
         "output_csv",
+        "compound_balance_mode",
+        "strategy_market_no",
+        "strategy_balance_before_market",
+        "strategy_balance_after_market",
+        "market_simulated_starting_balance",
+        "market_simulated_final_balance",
         "error_type",
         "error_message",
     ]
@@ -155,6 +207,14 @@ def run_batch(
     job_no = 0
     completed_jobs = 0
     failed_jobs = 0
+    strategy_master_balances = {
+        safe_name(strategy_entry["name"]): starting_balance_default
+        for strategy_entry in strategy_runs
+    }
+    strategy_market_counts = {
+        safe_name(strategy_entry["name"]): 0
+        for strategy_entry in strategy_runs
+    }
 
     print(f"Batch: {batch_id}")
     print(f"Markets folder: {markets_folder}")
@@ -163,6 +223,7 @@ def run_batch(
     print(f"Markets: {len(markets)}")
     print(f"Strategy runs: {len(strategy_runs)}")
     print(f"Total simulations: {total_jobs}")
+    print(f"Compound balances: {compound_balance}")
     print()
 
     with summary_path.open("w", newline="", encoding="utf-8") as f:
@@ -182,6 +243,16 @@ def run_batch(
                 order_usd = float(strategy_cfg.get("order_usd", order_usd_default))
 
                 strategy_name = safe_name(strategy_entry["name"])
+                master_balance_before_market = (
+                    strategy_master_balances[strategy_name]
+                    if compound_balance
+                    else starting_balance
+                )
+                effective_market_balance = resolve_effective_market_balance(master_balance_before_market, batch_cfg)
+                if compound_balance:
+                    starting_balance = effective_market_balance if effective_market_balance is not None else master_balance_before_market
+                strategy_market_counts[strategy_name] += 1
+                strategy_market_no = strategy_market_counts[strategy_name]
                 strategy_dir = trajectories_dir / strategy_name
                 strategy_dir.mkdir(parents=True, exist_ok=True)
                 output_csv = strategy_dir / f"{market_slug}.csv"
@@ -208,10 +279,22 @@ def run_batch(
                         "strategy_config": strategy_entry["source_config"],
                         "strategy_run_name": strategy_name,
                         "output_csv": str(output_csv),
+                        "compound_balance_mode": compound_balance,
+                        "strategy_market_no": strategy_market_no,
+                        "strategy_balance_before_market": master_balance_before_market,
+                        "strategy_balance_after_market": (
+                            master_balance_before_market + result.total_reward
+                            if compound_balance and effective_market_balance is not None
+                            else ""
+                        ),
+                        "market_simulated_starting_balance": starting_balance,
+                        "market_simulated_final_balance": result.final_balance,
                         "error_type": "",
                         "error_message": "",
                         **result_dict,
                     }
+                    if compound_balance and effective_market_balance is not None:
+                        strategy_master_balances[strategy_name] = master_balance_before_market + result.total_reward
                     completed_jobs += 1
                 except Exception as e:
                     summary_row = {
@@ -229,6 +312,12 @@ def run_batch(
                         "strategy_config": strategy_entry["source_config"],
                         "strategy_run_name": strategy_name,
                         "output_csv": str(output_csv),
+                        "compound_balance_mode": compound_balance,
+                        "strategy_market_no": strategy_market_no,
+                        "strategy_balance_before_market": master_balance_before_market,
+                        "strategy_balance_after_market": master_balance_before_market if compound_balance else "",
+                        "market_simulated_starting_balance": starting_balance,
+                        "market_simulated_final_balance": "",
                         "error_type": type(e).__name__,
                         "error_message": str(e),
                     }

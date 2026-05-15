@@ -25,6 +25,8 @@ class DecisionState:
     up_tokens: float
     down_tokens: float
     current_balance: float
+    market_start_balance: float
+    market_spend_used: float
     last_action: str
     orders_placed: int
 

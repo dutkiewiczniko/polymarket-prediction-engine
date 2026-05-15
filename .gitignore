@@ -8,7 +8,7 @@ data_uncleaned/
 datasets/
 simulator_ready_markets/
 models/
-analysis/
+/analysis/
 market_data/
 simready2/
 simready3/

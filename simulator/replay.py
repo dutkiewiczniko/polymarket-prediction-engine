@@ -8,7 +8,7 @@ from simulator.config_loader import load_strategy_from_yaml
 from simulator.execution import execute_action
 from simulator.models import MarketTick, DecisionState, SimulationResult
 from simulator.portfolio import Portfolio
-from simulator.strategies import BaseStrategy
+from simulator.strategies import BaseStrategy, StrategyDecision
 
 
 def parse_float(value):
@@ -96,10 +96,12 @@ def run_simulation(
 
     resolved_outcome = infer_final_outcome(ticks, fallback=final_outcome)
     portfolio = Portfolio(cash=starting_balance)
+    market_start_balance = starting_balance
 
     rows = []
     last_action = "none"
     orders_placed = 0
+    market_spend_used = 0.0
 
     for tick in ticks:
         current_balance = portfolio.mark_to_market(tick.up_price, tick.down_price)
@@ -110,11 +112,16 @@ def run_simulation(
             up_tokens=portfolio.up_tokens,
             down_tokens=portfolio.down_tokens,
             current_balance=current_balance,
+            market_start_balance=market_start_balance,
+            market_spend_used=market_spend_used,
             last_action=last_action,
             orders_placed=orders_placed,
         )
 
-        decision = strategy.decide(state)
+        if tick.seconds_left is not None and tick.seconds_left <= 0:
+            decision = StrategyDecision("hold", "market closed")
+        else:
+            decision = strategy.decide(state)
         decision_usd_amount = decision.usd_amount if decision.usd_amount is not None else order_usd
         events = execute_action(
             portfolio=portfolio,
@@ -128,6 +135,7 @@ def run_simulation(
 
         if events:
             orders_placed += len(events)
+            market_spend_used += sum(event.usd_amount for event in events if event.action == "buy")
 
         balance_after = portfolio.mark_to_market(tick.up_price, tick.down_price)
 
@@ -149,6 +157,8 @@ def run_simulation(
             "reason": decision.reason,
             "usd_amount": decision_usd_amount,
             "events_count": len(events),
+            "market_spend_used_before": market_spend_used - sum(event.usd_amount for event in events if event.action == "buy"),
+            "market_spend_used_after": market_spend_used,
             "cash_after": portfolio.cash,
             "up_tokens_after": portfolio.up_tokens,
             "down_tokens_after": portfolio.down_tokens,

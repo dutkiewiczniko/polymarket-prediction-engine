@@ -136,6 +136,20 @@ class RuleBasedStrategy(BaseStrategy):
                 if action in {"buy_up", "buy_down"} and self.max_orders is not None and state.orders_placed >= self.max_orders:
                     return StrategyDecision("hold", "max buy orders reached")
                 usd_amount = rule.get("usd_amount", self.default_usd_amount)
+                if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
+                    price_metric = "up_price" if action == "buy_up" else "down_price"
+                    price = as_float(metrics.get(price_metric))
+                    token_basis = as_float(rule.get("balance_scaled_token_amount"))
+                    scale_balance = as_float(metrics.get("market_start_balance"))
+                    if price is None or token_basis is None or scale_balance is None:
+                        return StrategyDecision("hold", "cannot size balance_scaled_token_amount order")
+                    if rule.get("balance_scale_cap") is not None:
+                        cap = as_float(rule.get("balance_scale_cap"))
+                        if cap is None:
+                            return StrategyDecision("hold", "invalid balance_scale_cap")
+                        scale_balance = min(scale_balance, cap)
+                    token_amount = token_basis * scale_balance / 100.0
+                    usd_amount = token_amount * price
                 return StrategyDecision(
                     action=action,
                     reason=str(rule.get("name", f"rule matched: {action}")),
@@ -171,6 +185,8 @@ class RuleBasedStrategy(BaseStrategy):
             "elapsed": tick.elapsed,
             "cash": state.cash,
             "current_balance": state.current_balance,
+            "market_start_balance": state.market_start_balance,
+            "market_spend_used": state.market_spend_used,
             "up_tokens": state.up_tokens,
             "down_tokens": state.down_tokens,
             "has_up_position": state.up_tokens > 0,

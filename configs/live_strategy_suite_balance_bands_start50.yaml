@@ -1,0 +1,51 @@
+# Batch-style balance settings for live_strategy_suite.py.
+# The live suite uses these fields only:
+# - starting_balance
+# - effective_market_balance_bands
+# - effective_market_balance_default
+
+starting_balance: 50
+effective_market_balance_cap: 1000
+
+# Virtual withdrawal/reserve rules.
+# When trading master balance crosses each threshold, reserve 10% once.
+# This reduces future trading balance but does not move funds on-chain.
+withdrawal_pct: 0.10
+withdrawal_thresholds:
+  - 100
+  - 250
+  - 500
+  - 1000
+  - 2000
+  - 5000
+  - 10000
+  - 25000
+  - 50000
+  - 100000
+  - 250000
+  - 500000
+  - 1000000
+
+# [min_total_balance, max_total_balance, effective_market_balance]
+# Order sizes use balance_scaled_token_amount * effective_market_balance / 100.
+effective_market_balance_bands:
+  - [31.25, 62.5, 3]
+  - [62.5, 125, 6]
+  - [125, 250, 12]
+  - [250, 500, 25]
+  - [500, 1000, 50]
+  - [1000, 2000, 100]
+  - [2000, 4000, 200]
+  - [4000, 8000, 400]
+  - [8000, 16000, 800]
+  - [16000, 32000, 1600]
+  - [32000, 64000, 3200]
+  - [64000, 128000, 6400]
+  - [128000, 256000, 12800]
+  - [256000, 512000, 25600]
+  - [512000, 1024000, 51200]
+  - [1024000, 2048000, 102400]
+  - [2048000, null, 1000]
+
+# If balance is below the lowest band, do not place market exposure.
+effective_market_balance_default: 0

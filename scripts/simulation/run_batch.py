@@ -8,6 +8,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from simulator.batch import run_batch
 from simulator.config_loader import load_yaml
+from scripts.simulation.strategy_report import generate_report
 
 
 DEFAULT_CONFIG = Path("configs/simulation_batch.yaml")
@@ -25,6 +26,11 @@ def parse_args():
         "--no-input",
         action="store_true",
         help="Do not ask interactive questions; use config values and any CLI overrides.",
+    )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Skip automatic strategy_report.html generation after the batch completes.",
     )
     return parser.parse_args()
 
@@ -78,7 +84,7 @@ def main():
         batch_id = prompt_value("Batch id", batch_id or config.get("batch_id", "batch_test"))
         max_markets = prompt_optional_int("Max markets, blank for all", max_markets or config.get("max_markets"))
 
-    run_batch(
+    summary_path = run_batch(
         config_path,
         markets_folder=markets_folder,
         market_pattern=market_pattern,
@@ -86,6 +92,14 @@ def main():
         batch_id=batch_id,
         max_markets=max_markets,
     )
+    if not args.no_report:
+        run_folder = Path(summary_path).parent
+        try:
+            print()
+            print("Generating strategy report...")
+            generate_report(run_folder=run_folder)
+        except Exception as exc:
+            print(f"Strategy report generation failed: {type(exc).__name__}: {exc}")
 
 
 if __name__ == "__main__":
