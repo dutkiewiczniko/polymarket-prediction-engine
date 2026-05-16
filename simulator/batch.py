@@ -166,6 +166,10 @@ def run_batch(
     final_outcome = batch_cfg.get("final_outcome")
     max_markets = max_markets if max_markets is not None else batch_cfg.get("max_markets")
     compound_balance = bool(batch_cfg.get("compound_balance", False))
+    liquidity_aware_execution = bool(batch_cfg.get("liquidity_aware_execution", False))
+    liquidity_depth_window_cents = int(batch_cfg.get("liquidity_depth_window_cents", 2))
+    liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 1.0))
+    liquidity_missing_depth_policy = str(batch_cfg.get("liquidity_missing_depth_policy", "skip"))
 
     markets = discover_market_csvs(markets_folder, market_pattern)
     if max_markets is not None:
@@ -199,6 +203,10 @@ def run_batch(
         "strategy_balance_after_market",
         "market_simulated_starting_balance",
         "market_simulated_final_balance",
+        "liquidity_aware_execution",
+        "liquidity_depth_window_cents",
+        "liquidity_fill_fraction",
+        "liquidity_missing_depth_policy",
         "error_type",
         "error_message",
     ]
@@ -224,6 +232,7 @@ def run_batch(
     print(f"Strategy runs: {len(strategy_runs)}")
     print(f"Total simulations: {total_jobs}")
     print(f"Compound balances: {compound_balance}")
+    print(f"Liquidity-aware execution: {liquidity_aware_execution}")
     print()
 
     with summary_path.open("w", newline="", encoding="utf-8") as f:
@@ -268,6 +277,10 @@ def run_batch(
                         starting_balance=starting_balance,
                         order_usd=order_usd,
                         final_outcome=final_outcome,
+                        liquidity_aware_execution=liquidity_aware_execution,
+                        liquidity_depth_window_cents=liquidity_depth_window_cents,
+                        liquidity_fill_fraction=liquidity_fill_fraction,
+                        liquidity_missing_depth_policy=liquidity_missing_depth_policy,
                     )
 
                     result_dict = asdict(result)
@@ -289,6 +302,10 @@ def run_batch(
                         ),
                         "market_simulated_starting_balance": starting_balance,
                         "market_simulated_final_balance": result.final_balance,
+                        "liquidity_aware_execution": liquidity_aware_execution,
+                        "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
+                        "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
+                        "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
                         "error_type": "",
                         "error_message": "",
                         **result_dict,
@@ -318,6 +335,10 @@ def run_batch(
                         "strategy_balance_after_market": master_balance_before_market if compound_balance else "",
                         "market_simulated_starting_balance": starting_balance,
                         "market_simulated_final_balance": "",
+                        "liquidity_aware_execution": liquidity_aware_execution,
+                        "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
+                        "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
+                        "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
                         "error_type": type(e).__name__,
                         "error_message": str(e),
                     }

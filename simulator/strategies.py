@@ -164,7 +164,7 @@ class RuleBasedStrategy(BaseStrategy):
         tick = state.tick
         btc = tick.btc_chainlink if tick.btc_chainlink is not None else tick.btc_binance
 
-        return {
+        metrics = {
             "up_price": tick.up_price,
             "down_price": tick.down_price,
             "up_minus_down_price": distance(tick.up_price, tick.down_price),
@@ -195,6 +195,12 @@ class RuleBasedStrategy(BaseStrategy):
             "down_position_value": state.down_tokens * tick.down_price if tick.down_price is not None else None,
             "orders_placed": state.orders_placed,
         }
+        for key, value in getattr(tick, "extra", {}).items():
+            if key in metrics:
+                continue
+            parsed = as_float(value)
+            metrics[key] = parsed if parsed is not None else value
+        return metrics
 
     def _remember(self, metrics: dict[str, float | bool | None]) -> None:
         self._last_up_price = as_float(metrics.get("up_price"))
