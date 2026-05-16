@@ -16,6 +16,7 @@ DEFAULT_RANDOM_SEED = 42
 
 TARGET_COLUMN = "target_reward_to_go"
 MARKET_ID_COLUMN = "market_id"
+STRATEGY_COLUMN = "strategy_run_name"
 
 FEATURE_COLUMNS = [
     "elapsed",
@@ -67,8 +68,6 @@ FEATURE_COLUMNS = [
     "action_buy_down",
 ]
 
-LOAD_COLUMNS = [MARKET_ID_COLUMN] + FEATURE_COLUMNS + [TARGET_COLUMN]
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a reward-to-go regression model.")
@@ -100,6 +99,14 @@ def parse_args():
         action="store_true",
         help="Train for all requested epochs, while still reducing learning rate on plateaus.",
     )
+    parser.add_argument(
+        "--balance-by-strategy",
+        action="store_true",
+        help=(
+            "After splitting by market_id, downsample each split so every strategy_run_name "
+            "has the same number of rows in that split."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -115,11 +122,16 @@ def load_dataset(dataset_path: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
     header = pd.read_csv(dataset_path, nrows=0)
-    missing = [column for column in LOAD_COLUMNS if column not in header.columns]
+    load_columns = [MARKET_ID_COLUMN] + FEATURE_COLUMNS + [TARGET_COLUMN]
+    has_strategy_column = STRATEGY_COLUMN in header.columns
+    if has_strategy_column:
+        load_columns.append(STRATEGY_COLUMN)
+
+    missing = [column for column in load_columns if column not in header.columns]
     if missing:
         raise ValueError(f"Dataset is missing required columns: {missing}")
 
-    df = pd.read_csv(dataset_path, usecols=LOAD_COLUMNS)
+    df = pd.read_csv(dataset_path, usecols=load_columns)
     before_rows = len(df)
 
     for column in FEATURE_COLUMNS + [TARGET_COLUMN]:
@@ -128,10 +140,15 @@ def load_dataset(dataset_path: Path) -> pd.DataFrame:
     df = df.replace([math.inf, -math.inf], np.nan)
     df = df.dropna(subset=FEATURE_COLUMNS + [TARGET_COLUMN, MARKET_ID_COLUMN])
     df[MARKET_ID_COLUMN] = df[MARKET_ID_COLUMN].astype(str)
+    if has_strategy_column:
+        df[STRATEGY_COLUMN] = df[STRATEGY_COLUMN].fillna("").astype(str)
+    else:
+        df[STRATEGY_COLUMN] = "unknown"
 
     print(f"Rows loaded:          {before_rows}")
     print(f"Rows after cleaning:  {len(df)}")
     print(f"Unique markets:       {df[MARKET_ID_COLUMN].nunique()}")
+    print(f"Unique strategies:    {df[STRATEGY_COLUMN].nunique()}")
     return df
 
 
@@ -184,6 +201,34 @@ def split_dataframe(df, split_ids):
         raise ValueError("Train, validation, and test splits must all contain at least one row.")
 
     return train, validation, test
+
+
+def print_strategy_distribution(label, df):
+    counts = df[STRATEGY_COLUMN].value_counts().sort_index()
+    print(f"{label} strategy rows:")
+    for strategy_name, count in counts.items():
+        print(f"  {strategy_name}: {count}")
+
+
+def balance_split_by_strategy(df, seed, split_name):
+    strategy_counts = df[STRATEGY_COLUMN].value_counts()
+    if strategy_counts.empty:
+        raise ValueError(f"No strategy rows found in {split_name} split.")
+
+    min_rows = int(strategy_counts.min())
+    balanced_parts = []
+    for strategy_name, group in df.groupby(STRATEGY_COLUMN, sort=True):
+        balanced_parts.append(group.sample(n=min_rows, random_state=seed))
+
+    balanced = pd.concat(balanced_parts, ignore_index=True)
+    balanced = balanced.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+
+    print()
+    print(f"Balanced {split_name} by strategy_run_name")
+    print(f"Strategy count:       {len(strategy_counts)}")
+    print(f"Rows per strategy:    {min_rows}")
+    print(f"Rows after balance:   {len(balanced)}")
+    return balanced
 
 
 def target_distribution(y):
@@ -365,6 +410,22 @@ def main():
     split_ids = split_market_ids(df[MARKET_ID_COLUMN].unique(), args.seed)
     train_df, val_df, test_df = split_dataframe(df, split_ids)
 
+    print()
+    print_strategy_distribution("Train", train_df)
+    print_strategy_distribution("Validation", val_df)
+    print_strategy_distribution("Test", test_df)
+
+    if args.balance_by_strategy:
+        train_df = balance_split_by_strategy(train_df, args.seed, "train")
+        val_df = balance_split_by_strategy(val_df, args.seed + 1, "validation")
+        test_df = balance_split_by_strategy(test_df, args.seed + 2, "test")
+
+        print()
+        print("Balanced strategy distribution")
+        print_strategy_distribution("Train", train_df)
+        print_strategy_distribution("Validation", val_df)
+        print_strategy_distribution("Test", test_df)
+
     x_train = train_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
     y_train = train_df[TARGET_COLUMN].to_numpy(dtype=np.float32)
     x_val = val_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
@@ -425,11 +486,17 @@ def main():
             "early_stopping_patience": args.early_stopping_patience,
             "min_epochs_before_stopping": args.min_epochs_before_stopping,
             "reduce_lr_patience": args.reduce_lr_patience,
+            "balance_by_strategy": args.balance_by_strategy,
         },
         "row_counts": {
             "train": int(len(train_df)),
             "validation": int(len(val_df)),
             "test": int(len(test_df)),
+        },
+        "strategy_row_counts": {
+            "train": train_df[STRATEGY_COLUMN].value_counts().sort_index().to_dict(),
+            "validation": val_df[STRATEGY_COLUMN].value_counts().sort_index().to_dict(),
+            "test": test_df[STRATEGY_COLUMN].value_counts().sort_index().to_dict(),
         },
         "market_counts": {
             "train": int(len(split_ids["train"])),

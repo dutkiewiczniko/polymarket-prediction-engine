@@ -1,0 +1,35 @@
+batch_id: careful_bold_experiment
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 400
+order_usd: 1
+final_outcome:
+compound_balance: false
+
+strategies:
+  - config: configs/strategies/careful_bold/careful_bold_up_confirm_050.yaml
+    count: 1
+    label: careful_bold_up_confirm_050
+
+  - config: configs/strategies/careful_bold/careful_bold_up_confirm_060.yaml
+    count: 1
+    label: careful_bold_up_confirm_060
+
+  - config: configs/strategies/careful_bold/careful_bold_up_confirm_070.yaml
+    count: 1
+    label: careful_bold_up_confirm_070
+
+  - config: configs/strategies/careful_bold/careful_bold_neutral_confirm_050.yaml
+    count: 1
+    label: careful_bold_neutral_confirm_050
+
+  - config: configs/strategies/careful_bold/careful_bold_neutral_confirm_060.yaml
+    count: 1
+    label: careful_bold_neutral_confirm_060
+
+  - config: configs/strategies/careful_bold/careful_bold_neutral_confirm_070.yaml
+    count: 1
+    label: careful_bold_neutral_confirm_070

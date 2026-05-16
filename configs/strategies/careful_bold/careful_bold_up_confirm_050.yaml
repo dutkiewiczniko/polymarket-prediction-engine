@@ -1,0 +1,164 @@
+name: careful_bold_up_confirm_050
+type: rule_based
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 300
+  cooldown_ticks: 1
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: cheap_up_001_buy_50_tokens
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+      action: buy_up
+      token_amount: 50
+
+    - name: cheap_down_001_buy_50_tokens
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+      action: buy_down
+      token_amount: 50
+
+    - name: cheap_up_002_buy_40_tokens
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.02
+      action: buy_up
+      token_amount: 40
+
+    - name: cheap_down_002_buy_40_tokens
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.02
+      action: buy_down
+      token_amount: 40
+
+    - name: cheap_up_003_buy_30_tokens
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.03
+      action: buy_up
+      token_amount: 30
+
+    - name: cheap_down_003_buy_30_tokens
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.03
+      action: buy_down
+      token_amount: 30
+
+    - name: cheap_up_004_buy_20_tokens
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.04
+      action: buy_up
+      token_amount: 20
+
+    - name: cheap_down_004_buy_20_tokens
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.04
+      action: buy_down
+      token_amount: 20
+
+    - name: cheap_up_005_buy_10_tokens
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.05
+      action: buy_up
+      token_amount: 10
+
+    - name: cheap_down_005_buy_10_tokens
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.05
+      action: buy_down
+      token_amount: 10
+
+    - name: btc_above_ptb_up_price_090_buy_50_tokens
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.9
+      action: buy_up
+      token_amount: 50
+
+    - name: btc_above_ptb_up_price_080_buy_40_tokens
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.8
+      action: buy_up
+      token_amount: 40
+
+    - name: btc_above_ptb_up_price_070_buy_30_tokens
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.7
+      action: buy_up
+      token_amount: 30
+
+    - name: btc_above_ptb_up_price_060_buy_20_tokens
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.6
+      action: buy_up
+      token_amount: 20
+
+    - name: btc_above_ptb_up_price_050_buy_10_tokens
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.5
+      action: buy_up
+      token_amount: 10

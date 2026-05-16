@@ -1,0 +1,73 @@
+name: momentum_swing_10pct_2ticks
+type: rule_based
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 300
+  cooldown_ticks: 1
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: up_price_momentum_10_over_2_ticks_buy_up
+      all:
+        - metric: up_price_pct_change_2_ticks
+          operator: ">="
+          value: 10
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 20
+
+    - name: down_price_momentum_10_over_2_ticks_buy_down
+      all:
+        - metric: down_price_pct_change_2_ticks
+          operator: ">="
+          value: 10
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 20
+
+    - name: fade_up_price_spike_10_over_2_ticks_buy_down
+      all:
+        - metric: up_price_pct_change_2_ticks
+          operator: ">="
+          value: 10
+        - metric: up_price
+          operator: ">="
+          value: 0.6
+      action: buy_down
+      token_amount: 20
+
+    - name: fade_down_price_spike_10_over_2_ticks_buy_up
+      all:
+        - metric: down_price_pct_change_2_ticks
+          operator: ">="
+          value: 10
+        - metric: down_price
+          operator: ">="
+          value: 0.6
+      action: buy_up
+      token_amount: 20
