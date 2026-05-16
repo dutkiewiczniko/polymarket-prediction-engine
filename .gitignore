@@ -8,5 +8,12 @@ data_uncleaned/
 datasets/
 simulator_ready_markets/
 models/
+/analysis/
+/market_data/
+/simready2/
+/simready3/
+market_data_rejections_from_total_uncleaned.csv
+simulator_ready_market_rejections_from_data.csv
+simulator_ready_market_rejections_from_uncleaned.csv
 
 .env

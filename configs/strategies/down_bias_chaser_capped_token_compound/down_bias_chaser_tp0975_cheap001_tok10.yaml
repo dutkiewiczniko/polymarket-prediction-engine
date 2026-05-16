@@ -1,0 +1,583 @@
+name: down_bias_chaser_tp0975_cheap001_tok10
+type: rule_based
+starting_balance: 2000
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 65
+  cooldown_ticks: 3
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.975
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.975
+      action: sell_down
+
+    - name: cheap_up_optional_lottery_under_1000
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: "<"
+          value: 1000
+      action: buy_up
+      token_amount: 10
+
+
+    - name: cheap_up_optional_lottery_1000_to_3000
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 1000
+        - metric: market_start_balance
+          operator: "<"
+          value: 3000
+      action: buy_up
+      token_amount: 10
+
+
+    - name: cheap_up_optional_lottery_3000_to_4000
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 3000
+        - metric: market_start_balance
+          operator: "<"
+          value: 4000
+      action: buy_up
+      token_amount: 20
+
+
+    - name: cheap_up_optional_lottery_4000_to_5000
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 4000
+        - metric: market_start_balance
+          operator: "<"
+          value: 5000
+      action: buy_up
+      token_amount: 30
+
+
+    - name: cheap_up_optional_lottery_5000_to_6000
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 5000
+        - metric: market_start_balance
+          operator: "<"
+          value: 6000
+      action: buy_up
+      token_amount: 40
+
+
+    - name: cheap_up_optional_lottery_6000_to_7000
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 6000
+        - metric: market_start_balance
+          operator: "<"
+          value: 7000
+      action: buy_up
+      token_amount: 50
+
+
+    - name: cheap_up_optional_lottery_7000_plus
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 7000
+      action: buy_up
+      token_amount: 60
+
+    - name: cheap_down_down_bias_lottery_under_1000
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: "<"
+          value: 1000
+      action: buy_down
+      token_amount: 15
+
+
+    - name: cheap_down_down_bias_lottery_1000_to_3000
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 1000
+        - metric: market_start_balance
+          operator: "<"
+          value: 3000
+      action: buy_down
+      token_amount: 15
+
+
+    - name: cheap_down_down_bias_lottery_3000_to_4000
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 3000
+        - metric: market_start_balance
+          operator: "<"
+          value: 4000
+      action: buy_down
+      token_amount: 25
+
+
+    - name: cheap_down_down_bias_lottery_4000_to_5000
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 4000
+        - metric: market_start_balance
+          operator: "<"
+          value: 5000
+      action: buy_down
+      token_amount: 35
+
+
+    - name: cheap_down_down_bias_lottery_5000_to_6000
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 5000
+        - metric: market_start_balance
+          operator: "<"
+          value: 6000
+      action: buy_down
+      token_amount: 45
+
+
+    - name: cheap_down_down_bias_lottery_6000_to_7000
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 6000
+        - metric: market_start_balance
+          operator: "<"
+          value: 7000
+      action: buy_down
+      token_amount: 55
+
+
+    - name: cheap_down_down_bias_lottery_7000_plus
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+        - metric: market_start_balance
+          operator: ">="
+          value: 7000
+      action: buy_down
+      token_amount: 65
+
+    - name: btc_below_price_to_beat_buy_down_under_1000
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: "<"
+          value: 1000
+      action: buy_down
+      token_amount: 15
+
+
+    - name: btc_below_price_to_beat_buy_down_1000_to_3000
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 1000
+        - metric: market_start_balance
+          operator: "<"
+          value: 3000
+      action: buy_down
+      token_amount: 15
+
+
+    - name: btc_below_price_to_beat_buy_down_3000_to_4000
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 3000
+        - metric: market_start_balance
+          operator: "<"
+          value: 4000
+      action: buy_down
+      token_amount: 25
+
+
+    - name: btc_below_price_to_beat_buy_down_4000_to_5000
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 4000
+        - metric: market_start_balance
+          operator: "<"
+          value: 5000
+      action: buy_down
+      token_amount: 35
+
+
+    - name: btc_below_price_to_beat_buy_down_5000_to_6000
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 5000
+        - metric: market_start_balance
+          operator: "<"
+          value: 6000
+      action: buy_down
+      token_amount: 45
+
+
+    - name: btc_below_price_to_beat_buy_down_6000_to_7000
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 6000
+        - metric: market_start_balance
+          operator: "<"
+          value: 7000
+      action: buy_down
+      token_amount: 55
+
+
+    - name: btc_below_price_to_beat_buy_down_7000_plus
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 7000
+      action: buy_down
+      token_amount: 65
+
+    - name: up_price_momentum_chase_buy_up_under_1000
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: "<"
+          value: 1000
+      action: buy_up
+      token_amount: 10
+
+
+    - name: up_price_momentum_chase_buy_up_1000_to_3000
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 1000
+        - metric: market_start_balance
+          operator: "<"
+          value: 3000
+      action: buy_up
+      token_amount: 10
+
+
+    - name: up_price_momentum_chase_buy_up_3000_to_4000
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 3000
+        - metric: market_start_balance
+          operator: "<"
+          value: 4000
+      action: buy_up
+      token_amount: 20
+
+
+    - name: up_price_momentum_chase_buy_up_4000_to_5000
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 4000
+        - metric: market_start_balance
+          operator: "<"
+          value: 5000
+      action: buy_up
+      token_amount: 30
+
+
+    - name: up_price_momentum_chase_buy_up_5000_to_6000
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 5000
+        - metric: market_start_balance
+          operator: "<"
+          value: 6000
+      action: buy_up
+      token_amount: 40
+
+
+    - name: up_price_momentum_chase_buy_up_6000_to_7000
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 6000
+        - metric: market_start_balance
+          operator: "<"
+          value: 7000
+      action: buy_up
+      token_amount: 50
+
+
+    - name: up_price_momentum_chase_buy_up_7000_plus
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 7000
+      action: buy_up
+      token_amount: 60
+
+    - name: down_price_momentum_chase_buy_down_under_1000
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: "<"
+          value: 1000
+      action: buy_down
+      token_amount: 15
+
+
+    - name: down_price_momentum_chase_buy_down_1000_to_3000
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 1000
+        - metric: market_start_balance
+          operator: "<"
+          value: 3000
+      action: buy_down
+      token_amount: 15
+
+
+    - name: down_price_momentum_chase_buy_down_3000_to_4000
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 3000
+        - metric: market_start_balance
+          operator: "<"
+          value: 4000
+      action: buy_down
+      token_amount: 25
+
+
+    - name: down_price_momentum_chase_buy_down_4000_to_5000
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 4000
+        - metric: market_start_balance
+          operator: "<"
+          value: 5000
+      action: buy_down
+      token_amount: 35
+
+
+    - name: down_price_momentum_chase_buy_down_5000_to_6000
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 5000
+        - metric: market_start_balance
+          operator: "<"
+          value: 6000
+      action: buy_down
+      token_amount: 45
+
+
+    - name: down_price_momentum_chase_buy_down_6000_to_7000
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 6000
+        - metric: market_start_balance
+          operator: "<"
+          value: 7000
+      action: buy_down
+      token_amount: 55
+
+
+    - name: down_price_momentum_chase_buy_down_7000_plus
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+        - metric: market_start_balance
+          operator: ">="
+          value: 7000
+      action: buy_down
+      token_amount: 65

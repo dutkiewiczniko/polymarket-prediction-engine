@@ -1,0 +1,112 @@
+name: hybrid_price_signal_careful_tp08_cheap0025_balpct10
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 42
+  cooldown_ticks: 7
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.8
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.8
+      action: sell_down
+
+    - name: cheap_up_optional_lottery
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.025
+      action: buy_up
+      balance_pct: 0.1
+
+    - name: cheap_down_down_bias_lottery
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.025
+      action: buy_down
+      balance_pct: 0.12
+
+    - name: btc_above_price_to_beat_buy_up
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: "<="
+          value: 0.78
+      action: buy_up
+      balance_pct: 0.1
+
+    - name: btc_below_price_to_beat_buy_down
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.78
+      action: buy_down
+      balance_pct: 0.12
+
+    - name: up_price_momentum_chase_buy_up
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3.75
+        - metric: up_price
+          operator: "<="
+          value: 0.78
+      action: buy_up
+      balance_pct: 0.1
+
+    - name: down_price_momentum_chase_buy_down
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3.75
+        - metric: down_price
+          operator: "<="
+          value: 0.78
+      action: buy_down
+      balance_pct: 0.12
+
+    - name: fade_up_price_spike_buy_down
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 6
+        - metric: up_price
+          operator: ">="
+          value: 0.6
+      action: buy_down
+      balance_pct: 0.12
+
+    - name: fade_down_price_spike_buy_up
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 6
+        - metric: down_price
+          operator: ">="
+          value: 0.6
+      action: buy_up
+      balance_pct: 0.1
