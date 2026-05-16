@@ -1,0 +1,67 @@
+batch_id: token_sizing_momentum_experiment
+markets_folder: simulator_ready_markets
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+
+starting_balance: 400
+order_usd: 1
+final_outcome:
+compound_balance: false
+
+strategies:
+  - config: configs/strategies/token_sizing_momentum/token_decrease_step10.yaml
+    count: 1
+    label: token_decrease_step10
+
+  - config: configs/strategies/token_sizing_momentum/token_decrease_step05.yaml
+    count: 1
+    label: token_decrease_step05
+
+  - config: configs/strategies/token_sizing_momentum/token_increase_step10.yaml
+    count: 1
+    label: token_increase_step10
+
+  - config: configs/strategies/token_sizing_momentum/token_increase_step05.yaml
+    count: 1
+    label: token_increase_step05
+
+  - config: configs/strategies/token_sizing_momentum/position_majority.yaml
+    count: 1
+    label: position_majority
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_25pct_1ticks.yaml
+    count: 1
+    label: momentum_swing_25pct_1ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_25pct_2ticks.yaml
+    count: 1
+    label: momentum_swing_25pct_2ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_25pct_3ticks.yaml
+    count: 1
+    label: momentum_swing_25pct_3ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_5pct_1ticks.yaml
+    count: 1
+    label: momentum_swing_5pct_1ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_5pct_2ticks.yaml
+    count: 1
+    label: momentum_swing_5pct_2ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_5pct_3ticks.yaml
+    count: 1
+    label: momentum_swing_5pct_3ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_10pct_1ticks.yaml
+    count: 1
+    label: momentum_swing_10pct_1ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_10pct_2ticks.yaml
+    count: 1
+    label: momentum_swing_10pct_2ticks
+
+  - config: configs/strategies/token_sizing_momentum/momentum_swing_10pct_3ticks.yaml
+    count: 1
+    label: momentum_swing_10pct_3ticks

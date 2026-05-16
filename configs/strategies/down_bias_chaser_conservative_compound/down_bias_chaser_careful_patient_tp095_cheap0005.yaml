@@ -1,0 +1,332 @@
+name: down_bias_chaser_careful_patient_tp095_cheap0005
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 16
+  cooldown_ticks: 10
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: cheap_up_probe_small
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.005
+      action: buy_up
+      token_amount: 2
+
+    - name: cheap_down_scaled_entry_very_low_balance
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+        - metric: current_balance
+          operator: ">="
+          value: 95
+        - metric: current_balance
+          operator: "<"
+          value: 100
+      action: buy_down
+      balance_scaled_token_amount: 8
+      balance_scale_cap: 40
+
+
+    - name: cheap_down_scaled_entry_low_balance
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+        - metric: current_balance
+          operator: ">="
+          value: 95
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: "<"
+          value: 1000
+      action: buy_down
+      balance_scaled_token_amount: 8
+      balance_scale_cap: 50
+
+
+    - name: cheap_down_scaled_entry_mid_balance
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+        - metric: current_balance
+          operator: ">="
+          value: 95
+        - metric: current_balance
+          operator: ">="
+          value: 1000
+        - metric: current_balance
+          operator: "<"
+          value: 2000
+      action: buy_down
+      balance_scaled_token_amount: 8
+      balance_scale_cap: 100
+
+
+    - name: cheap_down_scaled_entry_high_balance
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+        - metric: current_balance
+          operator: ">="
+          value: 95
+        - metric: current_balance
+          operator: ">="
+          value: 2000
+        - metric: current_balance
+          operator: "<"
+          value: 3000
+      action: buy_down
+      balance_scaled_token_amount: 8
+      balance_scale_cap: 200
+
+
+    - name: cheap_down_scaled_entry_very_high_balance
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+        - metric: current_balance
+          operator: ">="
+          value: 95
+        - metric: current_balance
+          operator: ">="
+          value: 3000
+        - metric: current_balance
+          operator: "<"
+          value: 4000
+      action: buy_down
+      balance_scaled_token_amount: 8
+      balance_scale_cap: 300
+
+
+    - name: cheap_down_scaled_entry_ultra_balance
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+        - metric: current_balance
+          operator: ">="
+          value: 95
+        - metric: current_balance
+          operator: ">="
+          value: 4000
+      action: buy_down
+      balance_scaled_token_amount: 8
+      balance_scale_cap: 400
+
+    - name: cheap_down_probe_small
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.005
+      action: buy_down
+      token_amount: 2
+
+    - name: btc_below_price_to_beat_scaled_down_very_low_balance
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -12
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: "<"
+          value: 100
+      action: buy_down
+      balance_scaled_token_amount: 6
+      balance_scale_cap: 40
+
+
+    - name: btc_below_price_to_beat_scaled_down_low_balance
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -12
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: "<"
+          value: 1000
+      action: buy_down
+      balance_scaled_token_amount: 6
+      balance_scale_cap: 50
+
+
+    - name: btc_below_price_to_beat_scaled_down_mid_balance
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -12
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: ">="
+          value: 1000
+        - metric: current_balance
+          operator: "<"
+          value: 2000
+      action: buy_down
+      balance_scaled_token_amount: 6
+      balance_scale_cap: 100
+
+
+    - name: btc_below_price_to_beat_scaled_down_high_balance
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -12
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: ">="
+          value: 2000
+        - metric: current_balance
+          operator: "<"
+          value: 3000
+      action: buy_down
+      balance_scaled_token_amount: 6
+      balance_scale_cap: 200
+
+
+    - name: btc_below_price_to_beat_scaled_down_very_high_balance
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -12
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: ">="
+          value: 3000
+        - metric: current_balance
+          operator: "<"
+          value: 4000
+      action: buy_down
+      balance_scaled_token_amount: 6
+      balance_scale_cap: 300
+
+
+    - name: btc_below_price_to_beat_scaled_down_ultra_balance
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -12
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+        - metric: current_balance
+          operator: ">="
+          value: 100
+        - metric: current_balance
+          operator: ">="
+          value: 4000
+      action: buy_down
+      balance_scaled_token_amount: 6
+      balance_scale_cap: 400
+
+    - name: btc_below_price_to_beat_probe_down
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: btc_distance_to_price_to_beat
+          operator: "<="
+          value: -6
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+      action: buy_down
+      token_amount: 3
+
+    - name: up_price_momentum_probe_up
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 5
+        - metric: up_price
+          operator: "<="
+          value: 0.68
+      action: buy_up
+      token_amount: 3
+
+    - name: down_price_momentum_probe_down
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 5
+        - metric: down_price
+          operator: "<="
+          value: 0.68
+      action: buy_down
+      token_amount: 3

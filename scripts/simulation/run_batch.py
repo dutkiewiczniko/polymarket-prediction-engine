@@ -23,14 +23,19 @@ def parse_args():
     parser.add_argument("--batch-id", help="Name for this run under output-root.")
     parser.add_argument("--max-markets", type=int, help="Limit how many market CSVs to simulate.")
     parser.add_argument(
+        "--compound-balance",
+        action="store_true",
+        help="Carry each strategy's final balance into its next market as starting balance.",
+    )
+    parser.add_argument(
+        "--no-compound-balance",
+        action="store_true",
+        help="Force non-compounding mode even if the config enables compounding.",
+    )
+    parser.add_argument(
         "--no-input",
         action="store_true",
         help="Do not ask interactive questions; use config values and any CLI overrides.",
-    )
-    parser.add_argument(
-        "--no-report",
-        action="store_true",
-        help="Skip automatic strategy_report.html generation after the batch completes.",
     )
     return parser.parse_args()
 
@@ -46,6 +51,18 @@ def prompt_optional_int(label, default_value):
     if not value:
         return default_value
     return int(value)
+
+
+def prompt_bool(label, default_value):
+    default_text = "y" if default_value else "n"
+    value = input(f"{label} [y/n, default {default_text}]: ").strip().lower()
+    if not value:
+        return default_value
+    if value in {"y", "yes", "true", "1"}:
+        return True
+    if value in {"n", "no", "false", "0"}:
+        return False
+    raise ValueError(f"Invalid yes/no value: {value}")
 
 
 def main():
@@ -73,6 +90,11 @@ def main():
     output_root = args.output_root
     batch_id = args.batch_id
     max_markets = args.max_markets
+    compound_balance = None
+    if args.compound_balance:
+        compound_balance = True
+    if args.no_compound_balance:
+        compound_balance = False
 
     if interactive:
         markets_folder = prompt_value("Markets folder", markets_folder or config.get("markets_folder", "data"))
@@ -83,6 +105,10 @@ def main():
         output_root = prompt_value("Output root folder", output_root or config.get("output_root", "runs"))
         batch_id = prompt_value("Batch id", batch_id or config.get("batch_id", "batch_test"))
         max_markets = prompt_optional_int("Max markets, blank for all", max_markets or config.get("max_markets"))
+        compound_balance = prompt_bool(
+            "Compound balance across markets per strategy",
+            bool(config.get("compound_balance", False)) if compound_balance is None else compound_balance,
+        )
 
     summary_path = run_batch(
         config_path,
@@ -91,15 +117,15 @@ def main():
         output_root=output_root,
         batch_id=batch_id,
         max_markets=max_markets,
+        compound_balance=compound_balance,
     )
-    if not args.no_report:
-        run_folder = Path(summary_path).parent
-        try:
-            print()
-            print("Generating strategy report...")
-            generate_report(run_folder=run_folder)
-        except Exception as exc:
-            print(f"Strategy report generation failed: {type(exc).__name__}: {exc}")
+    run_folder = Path(summary_path).parent
+    try:
+        print()
+        print("Generating strategy report...")
+        generate_report(run_folder=run_folder)
+    except Exception as exc:
+        print(f"Strategy report generation failed: {type(exc).__name__}: {exc}")
 
 
 if __name__ == "__main__":

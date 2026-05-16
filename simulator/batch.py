@@ -136,6 +136,7 @@ def run_batch(
     output_root: str | Path | None = None,
     batch_id: str | None = None,
     max_markets: int | None = None,
+    compound_balance: bool | None = None,
 ) -> Path:
     """Run many strategies across many market CSVs.
 
@@ -165,7 +166,9 @@ def run_batch(
     order_usd_default = float(batch_cfg.get("order_usd", 1.0))
     final_outcome = batch_cfg.get("final_outcome")
     max_markets = max_markets if max_markets is not None else batch_cfg.get("max_markets")
-    compound_balance = bool(batch_cfg.get("compound_balance", False))
+    compound_balance = bool(
+        batch_cfg.get("compound_balance", False) if compound_balance is None else compound_balance
+    )
     liquidity_aware_execution = bool(batch_cfg.get("liquidity_aware_execution", False))
     liquidity_depth_window_cents = int(batch_cfg.get("liquidity_depth_window_cents", 2))
     liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 1.0))

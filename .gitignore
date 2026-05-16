@@ -2,21 +2,25 @@ venv/
 __pycache__/
 *.pyc
 
+# Generated run outputs and market data
 runs/
 data/
 data_uncleaned/
 datasets/
+market_data/
+training_data/
+simready*/
 simulator_ready_markets/
 models/
 /analysis/
-market_data/
-simready2/
-simready3/
+/market_data/
+/simready2/
+/simready3/
 market_data_rejections_from_total_uncleaned.csv
 simulator_ready_market_rejections_from_data.csv
 simulator_ready_market_rejections_from_uncleaned.csv
 
-# Generated strategy sweeps.
+# Generated strategy config grids
 configs/strategies/deterministic_diverse/
 configs/strategies/deterministic_diverse_sizing/
 configs/strategies/down_bias_chaser_balance_scaled/
@@ -24,5 +28,10 @@ configs/strategies/down_bias_chaser_balance_scaled_rerun_top/
 configs/strategies/down_bias_chaser_capped_token_compound/
 configs/strategies/down_bias_chaser_conservative_compound/
 configs/strategies/down_bias_chaser_pct_compound/
+
+# Generated data quality reports
+*rejections*.csv
+rejected_market_files.csv
+market_data_rejections*.csv
 
 .env
