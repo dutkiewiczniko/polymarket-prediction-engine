@@ -33,6 +33,12 @@ def discover_market_csvs(markets_folder: str | Path, pattern: str = "btc-updown-
 
 
 def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> float | None:
+    def apply_cap(value: float) -> float:
+        cap = batch_cfg.get("effective_market_balance_cap")
+        if cap is None:
+            return value
+        return min(value, float(cap))
+
     pct = batch_cfg.get("effective_market_balance_pct")
     if pct is not None:
         simulated_balance = master_balance * float(pct)
@@ -42,7 +48,7 @@ def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> 
             simulated_balance = max(simulated_balance, float(min_balance))
         if max_balance is not None:
             simulated_balance = min(simulated_balance, float(max_balance))
-        return min(master_balance, simulated_balance)
+        return min(master_balance, apply_cap(simulated_balance))
 
     bands = batch_cfg.get("effective_market_balance_bands")
     if not bands:
@@ -63,12 +69,12 @@ def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> 
         min_ok = min_balance is None or master_balance >= float(min_balance)
         max_ok = max_balance is None or master_balance < float(max_balance)
         if min_ok and max_ok:
-            return min(master_balance, float(simulated_balance))
+            return min(master_balance, apply_cap(float(simulated_balance)))
 
     if "effective_market_balance_default" in batch_cfg:
-        return min(master_balance, float(batch_cfg.get("effective_market_balance_default") or 0.0))
+        return min(master_balance, apply_cap(float(batch_cfg.get("effective_market_balance_default") or 0.0)))
 
-    return min(master_balance, float(batch_cfg.get("starting_balance", 100.0)))
+    return min(master_balance, apply_cap(float(batch_cfg.get("starting_balance", 100.0))))
 
 
 def expand_strategy_runs(batch_cfg: dict) -> list[dict]:
@@ -163,6 +169,10 @@ def run_batch(
     compound_balance = bool(
         batch_cfg.get("compound_balance", False) if compound_balance is None else compound_balance
     )
+    liquidity_aware_execution = bool(batch_cfg.get("liquidity_aware_execution", False))
+    liquidity_depth_window_cents = int(batch_cfg.get("liquidity_depth_window_cents", 2))
+    liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 1.0))
+    liquidity_missing_depth_policy = str(batch_cfg.get("liquidity_missing_depth_policy", "skip"))
 
     markets = discover_market_csvs(markets_folder, market_pattern)
     if max_markets is not None:
@@ -196,6 +206,10 @@ def run_batch(
         "strategy_balance_after_market",
         "market_simulated_starting_balance",
         "market_simulated_final_balance",
+        "liquidity_aware_execution",
+        "liquidity_depth_window_cents",
+        "liquidity_fill_fraction",
+        "liquidity_missing_depth_policy",
         "error_type",
         "error_message",
     ]
@@ -204,11 +218,14 @@ def run_batch(
     job_no = 0
     completed_jobs = 0
     failed_jobs = 0
-    strategy_balances = {
-        safe_name(strategy_entry["name"]): float(strategy_entry["config"].get("starting_balance", starting_balance_default))
+    strategy_master_balances = {
+        safe_name(strategy_entry["name"]): starting_balance_default
         for strategy_entry in strategy_runs
     }
-    strategy_market_counts = {safe_name(strategy_entry["name"]): 0 for strategy_entry in strategy_runs}
+    strategy_market_counts = {
+        safe_name(strategy_entry["name"]): 0
+        for strategy_entry in strategy_runs
+    }
 
     print(f"Batch: {batch_id}")
     print(f"Markets folder: {markets_folder}")
@@ -218,6 +235,7 @@ def run_batch(
     print(f"Strategy runs: {len(strategy_runs)}")
     print(f"Total simulations: {total_jobs}")
     print(f"Compound balances: {compound_balance}")
+    print(f"Liquidity-aware execution: {liquidity_aware_execution}")
     print()
 
     with summary_path.open("w", newline="", encoding="utf-8") as f:
@@ -232,17 +250,19 @@ def run_batch(
                 job_no += 1
 
                 strategy_cfg = strategy_entry["config"]
-                base_starting_balance = float(strategy_cfg.get("starting_balance", starting_balance_default))
+
+                starting_balance = float(strategy_cfg.get("starting_balance", starting_balance_default))
                 order_usd = float(strategy_cfg.get("order_usd", order_usd_default))
 
                 strategy_name = safe_name(strategy_entry["name"])
                 master_balance_before_market = (
-                    strategy_balances[strategy_name] if compound_balance else base_starting_balance
+                    strategy_master_balances[strategy_name]
+                    if compound_balance
+                    else starting_balance
                 )
                 effective_market_balance = resolve_effective_market_balance(master_balance_before_market, batch_cfg)
-                starting_balance = (
-                    effective_market_balance if effective_market_balance is not None else master_balance_before_market
-                )
+                if compound_balance:
+                    starting_balance = effective_market_balance if effective_market_balance is not None else master_balance_before_market
                 strategy_market_counts[strategy_name] += 1
                 strategy_market_no = strategy_market_counts[strategy_name]
                 strategy_dir = trajectories_dir / strategy_name
@@ -260,6 +280,10 @@ def run_batch(
                         starting_balance=starting_balance,
                         order_usd=order_usd,
                         final_outcome=final_outcome,
+                        liquidity_aware_execution=liquidity_aware_execution,
+                        liquidity_depth_window_cents=liquidity_depth_window_cents,
+                        liquidity_fill_fraction=liquidity_fill_fraction,
+                        liquidity_missing_depth_policy=liquidity_missing_depth_policy,
                     )
 
                     result_dict = asdict(result)
@@ -271,26 +295,26 @@ def run_batch(
                         "strategy_config": strategy_entry["source_config"],
                         "strategy_run_name": strategy_name,
                         "output_csv": str(output_csv),
-                        "compound_balance_mode": str(compound_balance).lower(),
+                        "compound_balance_mode": compound_balance,
                         "strategy_market_no": strategy_market_no,
                         "strategy_balance_before_market": master_balance_before_market,
                         "strategy_balance_after_market": (
                             master_balance_before_market + result.total_reward
                             if compound_balance and effective_market_balance is not None
-                            else result.final_balance
+                            else ""
                         ),
                         "market_simulated_starting_balance": starting_balance,
                         "market_simulated_final_balance": result.final_balance,
+                        "liquidity_aware_execution": liquidity_aware_execution,
+                        "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
+                        "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
+                        "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
                         "error_type": "",
                         "error_message": "",
                         **result_dict,
                     }
-                    if compound_balance:
-                        strategy_balances[strategy_name] = float(
-                            master_balance_before_market + result.total_reward
-                            if effective_market_balance is not None
-                            else result.final_balance
-                        )
+                    if compound_balance and effective_market_balance is not None:
+                        strategy_master_balances[strategy_name] = master_balance_before_market + result.total_reward
                     completed_jobs += 1
                 except Exception as e:
                     summary_row = {
@@ -308,12 +332,16 @@ def run_batch(
                         "strategy_config": strategy_entry["source_config"],
                         "strategy_run_name": strategy_name,
                         "output_csv": str(output_csv),
-                        "compound_balance_mode": str(compound_balance).lower(),
+                        "compound_balance_mode": compound_balance,
                         "strategy_market_no": strategy_market_no,
                         "strategy_balance_before_market": master_balance_before_market,
                         "strategy_balance_after_market": master_balance_before_market if compound_balance else "",
                         "market_simulated_starting_balance": starting_balance,
                         "market_simulated_final_balance": "",
+                        "liquidity_aware_execution": liquidity_aware_execution,
+                        "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
+                        "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
+                        "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
                         "error_type": type(e).__name__,
                         "error_message": str(e),
                     }

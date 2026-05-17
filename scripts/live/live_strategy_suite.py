@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import csv
 import json
+import os
 import re
 import sys
 import threading
@@ -32,6 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from simulator.config_loader import build_strategy_from_config, load_yaml
 from simulator.execution import execute_action
+from simulator.liquidity import liquidity_limits_for_action
 from simulator.batch import resolve_effective_market_balance
 from simulator.models import DecisionState, MarketTick
 from simulator.portfolio import Portfolio
@@ -56,6 +58,27 @@ MARKET_CSV_HEADER = [
     "price_to_beat",
     "price_to_beat_source",
 ]
+ORDERBOOK_DEPTH_WINDOWS_CENTS = (1, 2, 5)
+ORDERBOOK_DEPTH_COLUMNS = []
+for _side in ("up", "down"):
+    ORDERBOOK_DEPTH_COLUMNS.extend([
+        f"{_side}_best_bid",
+        f"{_side}_best_ask",
+        f"{_side}_spread",
+        f"{_side}_bid_usd_total",
+        f"{_side}_ask_usd_total",
+        f"{_side}_book_hash",
+        f"{_side}_book_changed",
+        f"{_side}_book_error",
+    ])
+    for _cents in ORDERBOOK_DEPTH_WINDOWS_CENTS:
+        ORDERBOOK_DEPTH_COLUMNS.extend([
+            f"{_side}_ask_size_within_{_cents}c",
+            f"{_side}_ask_usd_within_{_cents}c",
+            f"{_side}_bid_size_within_{_cents}c",
+            f"{_side}_bid_usd_within_{_cents}c",
+        ])
+MARKET_CSV_HEADER.extend(ORDERBOOK_DEPTH_COLUMNS)
 TRAJECTORY_COLUMNS = [
     "timestamp",
     "unix_time",
@@ -66,6 +89,7 @@ TRAJECTORY_COLUMNS = [
     "btc_price",
     "price_to_beat",
     "price_to_beat_source",
+    *ORDERBOOK_DEPTH_COLUMNS,
     "market_slug",
     "strategy_name",
     "cash_before",
@@ -75,6 +99,15 @@ TRAJECTORY_COLUMNS = [
     "action",
     "reason",
     "usd_amount",
+    "executed_usd_amount",
+    "liquidity_aware_execution",
+    "liquidity_depth_window_cents",
+    "liquidity_fill_fraction",
+    "liquidity_requested_usd_amount",
+    "liquidity_executable_usd_amount",
+    "liquidity_max_buy_usd",
+    "liquidity_max_sell_tokens",
+    "liquidity_reason",
     "events_count",
     "market_spend_used_before",
     "market_spend_used_after",
@@ -86,6 +119,8 @@ TRAJECTORY_COLUMNS = [
     "market_simulated_starting_balance",
     "market_simulated_final_balance",
     "master_balance_after_market",
+    "withdrawn_after_market",
+    "reserved_balance_after_market",
     "final_outcome",
     "total_reward",
 ]
@@ -104,6 +139,8 @@ SUMMARY_COLUMNS = [
     "master_balance_before_market",
     "market_simulated_starting_balance",
     "master_balance_after_market",
+    "withdrawn_after_market",
+    "reserved_balance_after_market",
     "total_reward",
     "rows_written",
     "orders_placed",
@@ -112,6 +149,20 @@ SUMMARY_COLUMNS = [
     "sell_up_events",
     "sell_down_events",
     "output_csv",
+]
+REAL_ORDER_COLUMNS = [
+    "timestamp",
+    "market_slug",
+    "strategy_name",
+    "paper_event_action",
+    "side",
+    "token_id",
+    "amount",
+    "amount_type",
+    "order_type",
+    "status",
+    "response",
+    "error",
 ]
 
 
@@ -133,6 +184,35 @@ def parse_args():
     parser.add_argument("--port", type=int, default=5052, help="Local dashboard port.")
     parser.add_argument("--max-markets", type=int, default=0, help="Stop after this many completed markets. 0 means run forever.")
     parser.add_argument(
+        "--execution-mode",
+        choices=["paper", "real"],
+        default="paper",
+        help="paper simulates fills locally. real mirrors generated trade events to Polymarket with real funds.",
+    )
+    parser.add_argument(
+        "--i-understand-real-money",
+        action="store_true",
+        help="Required with --execution-mode real. Confirms this can submit real-money orders.",
+    )
+    parser.add_argument(
+        "--real-order-type",
+        choices=["FOK", "FAK"],
+        default="FOK",
+        help="Order type for real market orders. FOK avoids partial fills; FAK can partially fill.",
+    )
+    parser.add_argument(
+        "--real-max-order-usd",
+        type=float,
+        default=5.0,
+        help="Hard cap for each real BUY order in USDC.",
+    )
+    parser.add_argument(
+        "--real-min-seconds-left",
+        type=float,
+        default=2.0,
+        help="Skip real orders this close to market end.",
+    )
+    parser.add_argument(
         "--trajectory-log-mode",
         choices=["all", "actions"],
         default="all",
@@ -143,6 +223,21 @@ def parse_args():
         type=float,
         default=5.0,
         help="Only infer price_to_beat from live BTC if this many seconds or less have elapsed in the market.",
+    )
+    parser.add_argument(
+        "--orderbook-depth-interval",
+        type=float,
+        default=2.5,
+        help="Poll public CLOB order books this often and log cached visible depth columns. Use 0 to disable.",
+    )
+    parser.add_argument("--liquidity-aware-execution", action="store_true", help="Cap paper fills using logged orderbook depth.")
+    parser.add_argument("--liquidity-depth-window-cents", type=int, default=2, help="Use visible depth within this many cents.")
+    parser.add_argument("--liquidity-fill-fraction", type=float, default=1.0, help="Fraction of visible depth considered fillable.")
+    parser.add_argument(
+        "--liquidity-missing-depth-policy",
+        choices=["skip", "allow"],
+        default="skip",
+        help="What to do when liquidity-aware execution is on but a row has no depth data.",
     )
     return parser.parse_args()
 
@@ -160,6 +255,117 @@ def format_csv_value(value):
     return value
 
 
+def parse_float(value):
+    if value is None:
+        return None
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def blank_orderbook_depth():
+    return {column: "" for column in ORDERBOOK_DEPTH_COLUMNS}
+
+
+def normalize_book_levels(levels, *, reverse):
+    normalized = []
+    if not isinstance(levels, list):
+        return normalized
+    for item in levels:
+        if not isinstance(item, dict):
+            continue
+        price = parse_float(item.get("price"))
+        size = parse_float(item.get("size"))
+        if price is None or size is None or price <= 0 or size <= 0:
+            continue
+        normalized.append({
+            "price": price,
+            "size": size,
+            "usd": price * size,
+        })
+    return sorted(normalized, key=lambda row: row["price"], reverse=reverse)
+
+
+def depth_within(levels, best_price, cents, *, ask_side):
+    if best_price is None:
+        return 0.0, 0.0
+    window = cents / 100.0
+    if ask_side:
+        selected = [level for level in levels if level["price"] <= best_price + window + 1e-12]
+    else:
+        selected = [level for level in levels if level["price"] >= best_price - window - 1e-12]
+    return (
+        sum(level["size"] for level in selected),
+        sum(level["usd"] for level in selected),
+    )
+
+
+def fetch_orderbook(token_id, timeout=2.0):
+    try:
+        response = requests.get(f"{CLOB_API}/book", params={"token_id": token_id}, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        response = requests.get(f"{CLOB_API}/book", params={"asset_id": token_id}, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+
+
+def summarize_orderbook(book):
+    bids = normalize_book_levels(book.get("bids"), reverse=True)
+    asks = normalize_book_levels(book.get("asks"), reverse=False)
+    best_bid = bids[0]["price"] if bids else None
+    best_ask = asks[0]["price"] if asks else None
+    summary = {
+        "best_bid": best_bid,
+        "best_ask": best_ask,
+        "spread": best_ask - best_bid if best_bid is not None and best_ask is not None else "",
+        "bid_usd_total": sum(level["usd"] for level in bids),
+        "ask_usd_total": sum(level["usd"] for level in asks),
+        "book_hash": str(book.get("hash") or ""),
+    }
+    if not summary["book_hash"]:
+        encoded = json.dumps({"bids": bids, "asks": asks}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        import hashlib
+        summary["book_hash"] = hashlib.sha256(encoded).hexdigest()
+    for cents in ORDERBOOK_DEPTH_WINDOWS_CENTS:
+        ask_size, ask_usd = depth_within(asks, best_ask, cents, ask_side=True)
+        bid_size, bid_usd = depth_within(bids, best_bid, cents, ask_side=False)
+        summary[f"ask_size_within_{cents}c"] = ask_size
+        summary[f"ask_usd_within_{cents}c"] = ask_usd
+        summary[f"bid_size_within_{cents}c"] = bid_size
+        summary[f"bid_usd_within_{cents}c"] = bid_usd
+    return summary
+
+
+def fetch_market_orderbook_depth(market, timeout=2.0):
+    depth = blank_orderbook_depth()
+    for side, token_key in (("up", "up_token"), ("down", "down_token")):
+        token_id = market.get(token_key)
+        if not token_id:
+            depth[f"{side}_book_error"] = "missing token"
+            continue
+        try:
+            summary = summarize_orderbook(fetch_orderbook(token_id, timeout=timeout))
+        except Exception as exc:
+            depth[f"{side}_book_error"] = f"{type(exc).__name__}: {exc}"
+            continue
+        depth[f"{side}_best_bid"] = summary["best_bid"]
+        depth[f"{side}_best_ask"] = summary["best_ask"]
+        depth[f"{side}_spread"] = summary["spread"]
+        depth[f"{side}_bid_usd_total"] = summary["bid_usd_total"]
+        depth[f"{side}_ask_usd_total"] = summary["ask_usd_total"]
+        depth[f"{side}_book_hash"] = summary["book_hash"]
+        depth[f"{side}_book_error"] = ""
+        for cents in ORDERBOOK_DEPTH_WINDOWS_CENTS:
+            depth[f"{side}_ask_size_within_{cents}c"] = summary[f"ask_size_within_{cents}c"]
+            depth[f"{side}_ask_usd_within_{cents}c"] = summary[f"ask_usd_within_{cents}c"]
+            depth[f"{side}_bid_size_within_{cents}c"] = summary[f"bid_size_within_{cents}c"]
+            depth[f"{side}_bid_usd_within_{cents}c"] = summary[f"bid_usd_within_{cents}c"]
+    return depth
+
+
 def parse_numeric(value):
     if value is None:
         return None
@@ -172,6 +378,113 @@ def parse_numeric(value):
         except ValueError:
             return None
     return None
+
+
+class RealOrderExecutor:
+    def __init__(self, *, order_type: str, max_order_usd: float, min_seconds_left: float):
+        try:
+            from py_clob_client_v2 import (
+                ApiCreds,
+                ClobClient,
+                MarketOrderArgs,
+                OrderType,
+                PartialCreateOrderOptions,
+                Side,
+            )
+        except ModuleNotFoundError as exc:
+            raise SystemExit(
+                "Real execution requires the official Polymarket V2 Python client. "
+                "Install it with: pip install py-clob-client-v2"
+            ) from exc
+
+        private_key = os.environ.get("POLYMARKET_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY") or os.environ.get("PK")
+        if not private_key:
+            raise SystemExit("Set POLYMARKET_PRIVATE_KEY before running with --execution-mode real.")
+
+        api_key = os.environ.get("CLOB_API_KEY") or os.environ.get("API_KEY")
+        api_secret = os.environ.get("CLOB_SECRET") or os.environ.get("SECRET")
+        api_passphrase = (
+            os.environ.get("CLOB_PASS_PHRASE")
+            or os.environ.get("CLOB_API_PASSPHRASE")
+            or os.environ.get("PASSPHRASE")
+        )
+        if not (api_key and api_secret and api_passphrase):
+            raise SystemExit(
+                "Set API credentials before real trading: API_KEY, SECRET, PASSPHRASE "
+                "(or CLOB_API_KEY, CLOB_SECRET, CLOB_PASS_PHRASE)."
+            )
+        creds = ApiCreds(api_key=api_key, api_secret=api_secret, api_passphrase=api_passphrase)
+
+        kwargs = {
+            "host": os.environ.get("POLYMARKET_CLOB_HOST", CLOB_API),
+            "chain_id": int(os.environ.get("POLYMARKET_CHAIN_ID", "137")),
+            "key": private_key,
+            "creds": creds,
+        }
+        signature_type = os.environ.get("POLYMARKET_SIGNATURE_TYPE")
+        funder = os.environ.get("POLYMARKET_FUNDER") or os.environ.get("DEPOSIT_WALLET_ADDRESS")
+        if signature_type:
+            kwargs["signature_type"] = int(signature_type)
+        elif funder:
+            kwargs["signature_type"] = 3
+        if funder:
+            kwargs["funder"] = funder
+
+        self.client = ClobClient(**kwargs)
+
+        self.MarketOrderArgs = MarketOrderArgs
+        self.OrderType = OrderType
+        self.PartialCreateOrderOptions = PartialCreateOrderOptions
+        self.Side = Side
+        self.order_type_name = order_type
+        self.order_type = getattr(OrderType, order_type)
+        self.max_order_usd = max_order_usd
+        self.min_seconds_left = min_seconds_left
+
+    def submit_event(self, *, event, market, seconds_left):
+        if seconds_left is not None and seconds_left < self.min_seconds_left:
+            return {
+                "token_id": "",
+                "amount": "",
+                "amount_type": "",
+                "status": "skipped",
+                "response": "",
+                "error": f"seconds_left {seconds_left:.3f} below real_min_seconds_left",
+            }
+
+        token_id = market["up_token"] if event.side == "up" else market["down_token"]
+        amount = float(event.usd_amount if event.action == "buy" else event.tokens)
+        amount_type = "usdc" if event.action == "buy" else "shares"
+        if event.action == "buy" and amount > self.max_order_usd:
+            return {
+                "token_id": token_id,
+                "amount": amount,
+                "amount_type": amount_type,
+                "status": "skipped",
+                "response": "",
+                "error": f"buy amount {amount:.4f} exceeds real_max_order_usd {self.max_order_usd:.4f}",
+            }
+
+        side = self.Side.BUY if event.action == "buy" else self.Side.SELL
+        order_args = self.MarketOrderArgs(
+            token_id=str(token_id),
+            amount=amount,
+            side=side,
+            order_type=self.order_type,
+        )
+        response = self.client.create_and_post_market_order(
+            order_args=order_args,
+            options=self.PartialCreateOrderOptions(tick_size="0.01"),
+            order_type=self.order_type,
+        )
+        return {
+            "token_id": token_id,
+            "amount": amount,
+            "amount_type": amount_type,
+            "status": "submitted",
+            "response": json.dumps(response, default=str),
+            "error": "",
+        }
 
 
 def extract_price_to_beat(payload):
@@ -290,6 +603,8 @@ class StrategyRuntime:
     master_balance: float = 0.0
     master_balance_before_market: float = 0.0
     market_starting_balance: float = 0.0
+    reserved_balance: float = 0.0
+    triggered_withdrawal_thresholds: set = field(default_factory=set)
     name: str = ""
     strategy: object = None
     portfolio: Portfolio = None
@@ -324,6 +639,8 @@ class StrategyRuntime:
 class LiveStrategySuite:
     def __init__(self, args):
         self.args = args
+        if args.execution_mode == "real" and not args.i_understand_real_money:
+            raise SystemExit("--execution-mode real requires --i-understand-real-money")
         self.lock = threading.Lock()
         self.running = True
         self.completed_markets = 0
@@ -342,11 +659,20 @@ class LiveStrategySuite:
         self.market_data_dir = self.run_dir / "market_data"
         self.trajectory_dir = self.run_dir / "trajectories"
         self.summary_path = self.run_dir / "summary.csv"
+        self.real_order_path = self.run_dir / "real_orders.csv"
         self.latest_json_path = self.run_dir / "latest.json"
         self.summary_html_path = self.run_dir / "live_summary.html"
         self.market_data_dir.mkdir(parents=True, exist_ok=True)
         self.trajectory_dir.mkdir(parents=True, exist_ok=True)
         self.ensure_summary_header()
+        self.ensure_real_order_header()
+        self.real_executor = None
+        if args.execution_mode == "real":
+            self.real_executor = RealOrderExecutor(
+                order_type=args.real_order_type,
+                max_order_usd=args.real_max_order_usd,
+                min_seconds_left=args.real_min_seconds_left,
+            )
 
         self.state = {
             "btc_binance": [],
@@ -361,6 +687,8 @@ class LiveStrategySuite:
             "market_start": 0.0,
             "market_end": 0.0,
             "markets_seen": 0,
+            "orderbook_depth": blank_orderbook_depth(),
+            "orderbook_hashes": {},
         }
         self.current_market = None
         self.market_file = None
@@ -384,6 +712,37 @@ class LiveStrategySuite:
             return
         with self.summary_path.open("w", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow(SUMMARY_COLUMNS)
+
+    def ensure_real_order_header(self):
+        if self.real_order_path.exists():
+            return
+        with self.real_order_path.open("w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(REAL_ORDER_COLUMNS)
+
+    def log_real_order(self, row):
+        with self.real_order_path.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=REAL_ORDER_COLUMNS)
+            writer.writerow({column: row.get(column, "") for column in REAL_ORDER_COLUMNS})
+
+    def apply_virtual_withdrawals(self, runtime: StrategyRuntime) -> float:
+        if not self.compound_balance:
+            return 0.0
+        thresholds = self.balance_cfg.get("withdrawal_thresholds") or []
+        pct = float(self.balance_cfg.get("withdrawal_pct", 0.0) or 0.0)
+        if not thresholds or pct <= 0:
+            return 0.0
+
+        withdrawn = 0.0
+        for threshold in sorted(float(value) for value in thresholds):
+            if threshold in runtime.triggered_withdrawal_thresholds:
+                continue
+            if runtime.master_balance >= threshold:
+                amount = runtime.master_balance * pct
+                runtime.master_balance = max(0.0, runtime.master_balance - amount)
+                runtime.reserved_balance += amount
+                runtime.triggered_withdrawal_thresholds.add(threshold)
+                withdrawn += amount
+        return withdrawn
 
     def begin_market(self, market):
         self.end_market()
@@ -412,6 +771,8 @@ class LiveStrategySuite:
             self.state["down_price"].clear()
             self.state["btc_binance"].clear()
             self.state["btc_chainlink"].clear()
+            self.state["orderbook_depth"] = blank_orderbook_depth()
+            self.state["orderbook_hashes"] = {}
             self.state["markets_seen"] += 1
             self.latest_non_hold_actions.clear()
 
@@ -419,6 +780,7 @@ class LiveStrategySuite:
         print("=" * 80)
         print(f"Market #{self.state['markets_seen']}: {market['question']}")
         print(f"Strategies: {len(self.strategies)} from {self.strategy_folder}")
+        print(f"Execution mode: {self.args.execution_mode}")
         if self.compound_balance:
             active = [runtime.market_starting_balance for runtime in self.strategies]
             print(f"Compound balance config: {self.args.balance_config}")
@@ -434,6 +796,8 @@ class LiveStrategySuite:
         else:
             print("Price to beat: waiting for live BTC feed fallback")
         print(f"Run dir: {self.run_dir}")
+        if self.args.execution_mode == "real":
+            print(f"Real order log: {self.real_order_path}")
         print("=" * 80)
 
     def end_market(self):
@@ -457,12 +821,16 @@ class LiveStrategySuite:
         for runtime in self.strategies:
             final_balance = runtime.portfolio.resolve(final_outcome) if runtime.portfolio else runtime.market_starting_balance
             total_reward = final_balance - runtime.market_starting_balance
+            withdrawn_after_market = 0.0
             if self.compound_balance:
                 runtime.master_balance = max(0.0, runtime.master_balance_before_market + total_reward)
+                withdrawn_after_market = self.apply_virtual_withdrawals(runtime)
 
             for row in runtime.rows:
                 row["market_simulated_final_balance"] = final_balance
                 row["master_balance_after_market"] = runtime.master_balance
+                row["withdrawn_after_market"] = withdrawn_after_market
+                row["reserved_balance_after_market"] = runtime.reserved_balance
                 row["final_outcome"] = final_outcome
                 row["total_reward"] = total_reward
 
@@ -496,6 +864,8 @@ class LiveStrategySuite:
                 "master_balance_before_market": runtime.master_balance_before_market,
                 "market_simulated_starting_balance": runtime.market_starting_balance,
                 "master_balance_after_market": runtime.master_balance,
+                "withdrawn_after_market": withdrawn_after_market,
+                "reserved_balance_after_market": runtime.reserved_balance,
                 "total_reward": total_reward,
                 "rows_written": len(rows_to_write),
                 "orders_placed": runtime.orders_placed,
@@ -550,7 +920,8 @@ class LiveStrategySuite:
             btc_chainlink = self.state["btc_chainlink"][-1][1] if self.state["btc_chainlink"] else None
             price_to_beat = self.state["price_to_beat"]
             price_to_beat_source = self.state["price_to_beat_source"]
-        return {
+            orderbook_depth = dict(self.state.get("orderbook_depth") or {})
+        row = {
             "timestamp": datetime.fromtimestamp(now).strftime("%H:%M:%S.%f")[:-3],
             "unix_time": now,
             "seconds_left": market_end - now if market_end else None,
@@ -562,6 +933,26 @@ class LiveStrategySuite:
             "price_to_beat": price_to_beat,
             "price_to_beat_source": price_to_beat_source,
         }
+        row.update(blank_orderbook_depth())
+        row.update(orderbook_depth)
+        return row
+
+    def update_orderbook_depth(self, depth):
+        with self.lock:
+            previous_hashes = dict(self.state.get("orderbook_hashes") or {})
+            next_hashes = dict(previous_hashes)
+            for side in ("up", "down"):
+                hash_column = f"{side}_book_hash"
+                changed_column = f"{side}_book_changed"
+                book_hash = depth.get(hash_column)
+                previous_hash = previous_hashes.get(side)
+                if book_hash:
+                    depth[changed_column] = "" if previous_hash is None else book_hash != previous_hash
+                    next_hashes[side] = book_hash
+                else:
+                    depth[changed_column] = ""
+            self.state["orderbook_depth"] = depth
+            self.state["orderbook_hashes"] = next_hashes
 
     def append_market_row(self, row):
         if not self.market_writer or not self.market_file:
@@ -580,6 +971,7 @@ class LiveStrategySuite:
             btc_binance=row["btc_binance"],
             btc_chainlink=row["btc_chainlink"],
             price_to_beat=row["price_to_beat"],
+            extra={column: row.get(column, "") for column in ORDERBOOK_DEPTH_COLUMNS},
         )
 
     def step_strategies(self, row):
@@ -603,6 +995,31 @@ class LiveStrategySuite:
             else:
                 decision = runtime.strategy.decide(state)
             usd_amount = decision.usd_amount if decision.usd_amount is not None else float(runtime.config.get("order_usd", 1.0))
+            liquidity = {
+                "requested_usd_amount": usd_amount,
+                "executable_usd_amount": usd_amount,
+                "max_buy_usd": "",
+                "max_sell_tokens": "",
+                "reason": "liquidity disabled",
+            }
+            execution_usd_amount = usd_amount
+            max_buy_usd = None
+            max_sell_tokens = None
+            if self.args.liquidity_aware_execution:
+                liquidity = liquidity_limits_for_action(
+                    action=decision.action,
+                    row_metrics=row,
+                    requested_usd=usd_amount,
+                    cash=runtime.portfolio.cash,
+                    up_tokens=runtime.portfolio.up_tokens,
+                    down_tokens=runtime.portfolio.down_tokens,
+                    depth_window_cents=self.args.liquidity_depth_window_cents,
+                    fill_fraction=self.args.liquidity_fill_fraction,
+                    missing_depth_policy=self.args.liquidity_missing_depth_policy,
+                )
+                execution_usd_amount = liquidity["executable_usd_amount"]
+                max_buy_usd = liquidity["max_buy_usd"]
+                max_sell_tokens = liquidity["max_sell_tokens"]
             spend_before = runtime.market_spend_used
             events = execute_action(
                 portfolio=runtime.portfolio,
@@ -610,19 +1027,51 @@ class LiveStrategySuite:
                 timestamp=row["timestamp"],
                 up_price=row["up_price"],
                 down_price=row["down_price"],
-                usd_amount=usd_amount,
+                usd_amount=execution_usd_amount,
+                max_buy_usd=max_buy_usd,
+                max_sell_tokens=max_sell_tokens,
                 reason=decision.reason,
             )
             for event in events:
                 key = f"{event.action}_{event.side}"
                 if key in runtime.event_counts:
                     runtime.event_counts[key] += 1
+                if self.real_executor is not None:
+                    try:
+                        result = self.real_executor.submit_event(
+                            event=event,
+                            market=self.current_market,
+                            seconds_left=tick.seconds_left,
+                        )
+                    except Exception as exc:
+                        result = {
+                            "token_id": "",
+                            "amount": "",
+                            "amount_type": "",
+                            "status": "error",
+                            "response": "",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    self.log_real_order({
+                        "timestamp": row["timestamp"],
+                        "market_slug": market_slug,
+                        "strategy_name": runtime.name,
+                        "paper_event_action": event.action,
+                        "side": event.side,
+                        "token_id": result.get("token_id", ""),
+                        "amount": result.get("amount", ""),
+                        "amount_type": result.get("amount_type", ""),
+                        "order_type": self.args.real_order_type,
+                        "status": result.get("status", ""),
+                        "response": result.get("response", ""),
+                        "error": result.get("error", ""),
+                    })
             if events:
                 runtime.orders_placed += len(events)
                 runtime.market_spend_used += sum(event.usd_amount for event in events if event.action == "buy")
 
             balance_after = runtime.portfolio.mark_to_market(row["up_price"], row["down_price"])
-            runtime.rows.append({
+            trajectory_row = {
                 "timestamp": row["timestamp"],
                 "unix_time": row["unix_time"],
                 "elapsed": row["elapsed"],
@@ -641,6 +1090,15 @@ class LiveStrategySuite:
                 "action": decision.action,
                 "reason": decision.reason,
                 "usd_amount": usd_amount,
+                "executed_usd_amount": execution_usd_amount,
+                "liquidity_aware_execution": self.args.liquidity_aware_execution,
+                "liquidity_depth_window_cents": self.args.liquidity_depth_window_cents if self.args.liquidity_aware_execution else "",
+                "liquidity_fill_fraction": self.args.liquidity_fill_fraction if self.args.liquidity_aware_execution else "",
+                "liquidity_requested_usd_amount": liquidity["requested_usd_amount"],
+                "liquidity_executable_usd_amount": liquidity["executable_usd_amount"],
+                "liquidity_max_buy_usd": liquidity["max_buy_usd"],
+                "liquidity_max_sell_tokens": liquidity["max_sell_tokens"],
+                "liquidity_reason": liquidity["reason"],
                 "events_count": len(events),
                 "market_spend_used_before": spend_before,
                 "market_spend_used_after": runtime.market_spend_used,
@@ -652,9 +1110,14 @@ class LiveStrategySuite:
                 "market_simulated_starting_balance": runtime.market_starting_balance,
                 "market_simulated_final_balance": "",
                 "master_balance_after_market": "",
+                "withdrawn_after_market": "",
+                "reserved_balance_after_market": runtime.reserved_balance,
                 "final_outcome": "",
                 "total_reward": "",
-            })
+            }
+            for column in ORDERBOOK_DEPTH_COLUMNS:
+                trajectory_row[column] = row.get(column, "")
+            runtime.rows.append(trajectory_row)
             runtime.last_action = decision.action
 
             if decision.action != "hold" or events:
@@ -672,7 +1135,8 @@ class LiveStrategySuite:
                     self.latest_non_hold_actions = self.latest_non_hold_actions[:30]
                 print(
                     f"{row['timestamp']} {runtime.name}: {decision.action} "
-                    f"usd={usd_amount:.2f} events={len(events)} reason={decision.reason}"
+                    f"usd={execution_usd_amount:.2f}/{usd_amount:.2f} "
+                    f"events={len(events)} reason={decision.reason}"
                 )
 
     def dashboard_payload(self):
@@ -733,6 +1197,7 @@ class LiveStrategySuite:
                 "master_balance": runtime.master_balance,
                 "master_balance_before_market": runtime.master_balance_before_market,
                 "market_starting_balance": runtime.market_starting_balance,
+                "reserved_balance": runtime.reserved_balance,
                 "cash": cash,
                 "up_tokens": up_tokens,
                 "down_tokens": down_tokens,
@@ -758,6 +1223,7 @@ class LiveStrategySuite:
 
 def poll_clob_loop(suite: LiveStrategySuite):
     current_market = None
+    last_orderbook_depth_at = 0.0
     while suite.running:
         now = time.time()
         if current_market is None or now >= current_market["end_time"]:
@@ -779,6 +1245,7 @@ def poll_clob_loop(suite: LiveStrategySuite):
                 time.sleep(5)
                 continue
             suite.begin_market(current_market)
+            last_orderbook_depth_at = 0.0
             wait = current_market["start_time"] - time.time()
             if wait > 0:
                 time.sleep(wait)
@@ -801,6 +1268,13 @@ def poll_clob_loop(suite: LiveStrategySuite):
             continue
 
         now_t = time.time()
+        if suite.args.orderbook_depth_interval > 0 and (
+            now_t - last_orderbook_depth_at >= suite.args.orderbook_depth_interval
+        ):
+            depth = fetch_market_orderbook_depth(current_market, timeout=2.0)
+            suite.update_orderbook_depth(depth)
+            last_orderbook_depth_at = now_t
+
         with suite.lock:
             suite.state["up_price"].append((now_t, up_price))
             suite.state["down_price"].append((now_t, down_price))
@@ -1340,7 +1814,8 @@ def main():
     suite = LiveStrategySuite(args)
     SUITE = suite
 
-    print("Live strategy suite paper trader")
+    mode_label = "REAL MONEY trader" if args.execution_mode == "real" else "paper trader"
+    print(f"Live strategy suite {mode_label}")
     print("=" * 50)
     print(f"Strategy folder: {args.strategy_folder}")
     print(f"Strategies:      {len(suite.strategies)}")
@@ -1350,6 +1825,11 @@ def main():
     else:
         print(f"Start balance:   {args.starting_balance:.2f} per strategy per market")
     print(f"Target fallback: first {args.max_target_fallback_elapsed:.1f}s only")
+    print(f"Execution mode:  {args.execution_mode}")
+    if args.execution_mode == "real":
+        print(f"Real order type: {args.real_order_type}")
+        print(f"Real buy cap:    {args.real_max_order_usd:.2f} USDC per order")
+        print(f"Real order log:  {suite.real_order_path}")
     print(f"Dashboard:       http://localhost:{args.port}")
     print(f"Summary page:    http://localhost:{args.port}/summary")
     print(f"Run dir:         {suite.run_dir}")

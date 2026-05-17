@@ -1,0 +1,276 @@
+name: token_pricing_cheap_heavy_cheap180_mid120_high90_band_scaled
+type: rule_based
+order_usd: 1
+params:
+  default_usd_amount: 1
+  max_orders: 300
+  cooldown_ticks: 1
+  rules:
+  - name: take_profit_up_position
+    all:
+    - metric: has_up_position
+      operator: is
+      value: true
+    - metric: up_price
+      operator: '>='
+      value: 0.95
+    action: sell_up
+  - name: take_profit_down_position
+    all:
+    - metric: has_down_position
+      operator: is
+      value: true
+    - metric: down_price
+      operator: '>='
+      value: 0.95
+    action: sell_down
+  - name: cheap_up_001_buy_100_tokens
+    all:
+    - metric: up_price
+      operator: <=
+      value: 0.01
+    action: buy_up
+    balance_scaled_token_amount: 100
+  - name: cheap_down_001_buy_100_tokens
+    all:
+    - metric: down_price
+      operator: <=
+      value: 0.01
+    action: buy_down
+    balance_scaled_token_amount: 100
+  - name: cheap_up_002_buy_80_tokens
+    all:
+    - metric: up_price
+      operator: <=
+      value: 0.02
+    action: buy_up
+    balance_scaled_token_amount: 80
+  - name: cheap_down_002_buy_80_tokens
+    all:
+    - metric: down_price
+      operator: <=
+      value: 0.02
+    action: buy_down
+    balance_scaled_token_amount: 80
+  - name: cheap_up_003_buy_60_tokens
+    all:
+    - metric: up_price
+      operator: <=
+      value: 0.03
+    action: buy_up
+    balance_scaled_token_amount: 60
+  - name: cheap_down_003_buy_60_tokens
+    all:
+    - metric: down_price
+      operator: <=
+      value: 0.03
+    action: buy_down
+    balance_scaled_token_amount: 60
+  - name: cheap_up_004_buy_40_tokens
+    all:
+    - metric: up_price
+      operator: <=
+      value: 0.04
+    action: buy_up
+    balance_scaled_token_amount: 40
+  - name: cheap_down_004_buy_40_tokens
+    all:
+    - metric: down_price
+      operator: <=
+      value: 0.04
+    action: buy_down
+    balance_scaled_token_amount: 40
+  - name: cheap_up_005_buy_20_tokens
+    all:
+    - metric: up_price
+      operator: <=
+      value: 0.05
+    action: buy_up
+    balance_scaled_token_amount: 20
+  - name: cheap_down_005_buy_20_tokens
+    all:
+    - metric: down_price
+      operator: <=
+      value: 0.05
+    action: buy_down
+    balance_scaled_token_amount: 20
+  - name: btc_above_ptb_up_le_085_buy_90_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.85
+    action: buy_up
+    balance_scaled_token_amount: 90
+  - name: btc_below_ptb_down_le_085_buy_90_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.85
+    action: buy_down
+    balance_scaled_token_amount: 90
+  - name: btc_above_ptb_up_le_075_buy_100_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.75
+    action: buy_up
+    balance_scaled_token_amount: 100
+  - name: btc_below_ptb_down_le_075_buy_100_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.75
+    action: buy_down
+    balance_scaled_token_amount: 100
+  - name: btc_above_ptb_up_le_065_buy_110_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.65
+    action: buy_up
+    balance_scaled_token_amount: 110
+  - name: btc_below_ptb_down_le_065_buy_110_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.65
+    action: buy_down
+    balance_scaled_token_amount: 110
+  - name: btc_above_ptb_up_le_055_buy_118_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.55
+    action: buy_up
+    balance_scaled_token_amount: 118
+  - name: btc_below_ptb_down_le_055_buy_118_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.55
+    action: buy_down
+    balance_scaled_token_amount: 118
+  - name: btc_above_ptb_up_le_045_buy_125_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.45
+    action: buy_up
+    balance_scaled_token_amount: 125
+  - name: btc_below_ptb_down_le_045_buy_125_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.45
+    action: buy_down
+    balance_scaled_token_amount: 125
+  - name: btc_above_ptb_up_le_035_buy_130_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.35
+    action: buy_up
+    balance_scaled_token_amount: 130
+  - name: btc_below_ptb_down_le_035_buy_130_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.35
+    action: buy_down
+    balance_scaled_token_amount: 130
+  - name: btc_above_ptb_up_le_025_buy_145_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.25
+    action: buy_up
+    balance_scaled_token_amount: 145
+  - name: btc_below_ptb_down_le_025_buy_145_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.25
+    action: buy_down
+    balance_scaled_token_amount: 145
+  - name: btc_above_ptb_up_le_015_buy_165_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.15
+    action: buy_up
+    balance_scaled_token_amount: 165
+  - name: btc_below_ptb_down_le_015_buy_165_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.15
+    action: buy_down
+    balance_scaled_token_amount: 165
+  - name: btc_above_ptb_up_le_005_buy_180_tokens
+    all:
+    - metric: btc_above_price_to_beat
+      operator: is
+      value: true
+    - metric: up_price
+      operator: <=
+      value: 0.05
+    action: buy_up
+    balance_scaled_token_amount: 180
+  - name: btc_below_ptb_down_le_005_buy_180_tokens
+    all:
+    - metric: btc_below_price_to_beat
+      operator: is
+      value: true
+    - metric: down_price
+      operator: <=
+      value: 0.05
+    action: buy_down
+    balance_scaled_token_amount: 180

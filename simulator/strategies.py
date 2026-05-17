@@ -118,9 +118,6 @@ class RuleBasedStrategy(BaseStrategy):
         self._last_up_price: float | None = None
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
-        self._up_price_history: list[float] = []
-        self._down_price_history: list[float] = []
-        self._btc_history: list[float] = []
         self._ticks_since_trade = cooldown_ticks
 
     def decide(self, state: DecisionState) -> StrategyDecision:
@@ -139,57 +136,20 @@ class RuleBasedStrategy(BaseStrategy):
                 if action in {"buy_up", "buy_down"} and self.max_orders is not None and state.orders_placed >= self.max_orders:
                     return StrategyDecision("hold", "max buy orders reached")
                 usd_amount = rule.get("usd_amount", self.default_usd_amount)
-                if action in {"buy_up", "buy_down"} and rule.get("token_amount") is not None:
-                    price_metric = "up_price" if action == "buy_up" else "down_price"
-                    price = as_float(metrics.get(price_metric))
-                    token_amount = as_float(rule.get("token_amount"))
-                    if price is None or token_amount is None:
-                        return StrategyDecision("hold", "cannot size token_amount order")
-                    usd_amount = price * token_amount
-                if action in {"buy_up", "buy_down"} and rule.get("balance_pct") is not None:
-                    price_metric = "up_price" if action == "buy_up" else "down_price"
-                    price = as_float(metrics.get(price_metric))
-                    balance_pct = as_float(rule.get("balance_pct"))
-                    available_cash = as_float(metrics.get("cash"))
-                    if price is None or balance_pct is None or available_cash is None:
-                        return StrategyDecision("hold", "cannot size balance_pct order")
-                    token_amount = available_cash * balance_pct
-                    usd_amount = price * token_amount
-                if action in {"buy_up", "buy_down"} and rule.get("cash_usd_pct") is not None:
-                    cash_usd_pct = as_float(rule.get("cash_usd_pct"))
-                    available_cash = as_float(metrics.get("cash"))
-                    if cash_usd_pct is None or available_cash is None:
-                        return StrategyDecision("hold", "cannot size cash_usd_pct order")
-                    usd_amount = available_cash * cash_usd_pct
                 if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
-                    # Scale tokens from the fixed market-start balance. In compounded
-                    # simulations this is the effective band balance selected before
-                    # the market starts, so mark-to-market swings inside a market do
-                    # not recursively increase order size.
                     price_metric = "up_price" if action == "buy_up" else "down_price"
                     price = as_float(metrics.get(price_metric))
                     token_basis = as_float(rule.get("balance_scaled_token_amount"))
                     scale_balance = as_float(metrics.get("market_start_balance"))
                     if price is None or token_basis is None or scale_balance is None:
                         return StrategyDecision("hold", "cannot size balance_scaled_token_amount order")
-                    effective_balance = scale_balance
                     if rule.get("balance_scale_cap") is not None:
                         cap = as_float(rule.get("balance_scale_cap"))
                         if cap is None:
                             return StrategyDecision("hold", "invalid balance_scale_cap")
-                        effective_balance = min(effective_balance, cap)
-                    token_amount = token_basis * effective_balance / 100.0
-                    usd_amount = price * token_amount
-                if action in {"buy_up", "buy_down"} and rule.get("max_market_spend") is not None:
-                    max_market_spend = as_float(rule.get("max_market_spend"))
-                    market_spend_used = as_float(metrics.get("market_spend_used"))
-                    if max_market_spend is None or market_spend_used is None:
-                        return StrategyDecision("hold", "invalid max_market_spend")
-                    remaining_budget = max_market_spend - market_spend_used
-                    if remaining_budget <= 0:
-                        return StrategyDecision("hold", "market spend cap reached")
-                    if usd_amount is not None and usd_amount > remaining_budget:
-                        return StrategyDecision("hold", "order exceeds market spend cap")
+                        scale_balance = min(scale_balance, cap)
+                    token_amount = token_basis * scale_balance / 100.0
+                    usd_amount = token_amount * price
                 return StrategyDecision(
                     action=action,
                     reason=str(rule.get("name", f"rule matched: {action}")),
@@ -204,7 +164,7 @@ class RuleBasedStrategy(BaseStrategy):
         tick = state.tick
         btc = tick.btc_chainlink if tick.btc_chainlink is not None else tick.btc_binance
 
-        return {
+        metrics = {
             "up_price": tick.up_price,
             "down_price": tick.down_price,
             "up_minus_down_price": distance(tick.up_price, tick.down_price),
@@ -212,15 +172,9 @@ class RuleBasedStrategy(BaseStrategy):
             "up_price_distance_from_even": distance(tick.up_price, 0.5),
             "down_price_distance_from_even": distance(tick.down_price, 0.5),
             "up_price_pct_change": pct_change(tick.up_price, self._last_up_price),
-            "up_price_pct_change_2_ticks": pct_change_from_history(tick.up_price, self._up_price_history, 2),
-            "up_price_pct_change_3_ticks": pct_change_from_history(tick.up_price, self._up_price_history, 3),
             "down_price_pct_change": pct_change(tick.down_price, self._last_down_price),
-            "down_price_pct_change_2_ticks": pct_change_from_history(tick.down_price, self._down_price_history, 2),
-            "down_price_pct_change_3_ticks": pct_change_from_history(tick.down_price, self._down_price_history, 3),
             "btc_price": btc,
             "btc_pct_change": pct_change(btc, self._last_btc),
-            "btc_pct_change_2_ticks": pct_change_from_history(btc, self._btc_history, 2),
-            "btc_pct_change_3_ticks": pct_change_from_history(btc, self._btc_history, 3),
             "btc_distance_to_price_to_beat": distance(btc, tick.price_to_beat),
             "btc_distance_to_price_to_beat_pct": distance_pct(btc, tick.price_to_beat),
             "abs_btc_distance_to_price_to_beat": abs_distance(btc, tick.price_to_beat),
@@ -241,14 +195,17 @@ class RuleBasedStrategy(BaseStrategy):
             "down_position_value": state.down_tokens * tick.down_price if tick.down_price is not None else None,
             "orders_placed": state.orders_placed,
         }
+        for key, value in getattr(tick, "extra", {}).items():
+            if key in metrics:
+                continue
+            parsed = as_float(value)
+            metrics[key] = parsed if parsed is not None else value
+        return metrics
 
     def _remember(self, metrics: dict[str, float | bool | None]) -> None:
         self._last_up_price = as_float(metrics.get("up_price"))
         self._last_down_price = as_float(metrics.get("down_price"))
         self._last_btc = as_float(metrics.get("btc_price"))
-        append_history(self._up_price_history, self._last_up_price)
-        append_history(self._down_price_history, self._last_down_price)
-        append_history(self._btc_history, self._last_btc)
 
     def _rule_matches(self, rule: dict[str, Any], metrics: dict[str, float | bool | None]) -> bool:
         if "all" in rule:
@@ -307,19 +264,6 @@ def pct_change(current: float | None, previous: float | None) -> float | None:
     if current is None or previous is None or previous == 0:
         return None
     return ((current - previous) / previous) * 100.0
-
-
-def pct_change_from_history(current: float | None, history: list[float], ticks_back: int) -> float | None:
-    if current is None or ticks_back <= 0 or len(history) < ticks_back:
-        return None
-    return pct_change(current, history[-ticks_back])
-
-
-def append_history(history: list[float], value: float | None, max_len: int = 3) -> None:
-    if value is None:
-        return
-    history.append(value)
-    del history[:-max_len]
 
 
 def distance(value: float | None, target: float | None) -> float | None:

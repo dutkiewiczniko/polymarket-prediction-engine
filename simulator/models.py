@@ -1,5 +1,5 @@
 \
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -15,6 +15,7 @@ class MarketTick:
     btc_binance: Optional[float]
     btc_chainlink: Optional[float]
     price_to_beat: Optional[float]
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
