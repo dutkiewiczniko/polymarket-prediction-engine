@@ -6,7 +6,7 @@ from typing import Iterable
 
 from simulator.config_loader import load_strategy_from_yaml
 from simulator.execution import execute_action
-from simulator.liquidity import liquidity_limits_for_action
+from simulator.liquidity import liquidity_execution_prices, liquidity_limits_for_action
 from simulator.models import MarketTick, DecisionState, SimulationResult
 from simulator.portfolio import Portfolio
 from simulator.strategies import BaseStrategy, StrategyDecision
@@ -100,18 +100,19 @@ def run_simulation(
     *,
     market_csv: str | Path,
     strategy: BaseStrategy,
-    output_csv: str | Path,
+    output_csv: str | Path | None,
     starting_balance: float = 100.0,
     order_usd: float = 1.0,
     final_outcome: str | None = None,
     liquidity_aware_execution: bool = False,
     liquidity_depth_window_cents: int = 2,
-    liquidity_fill_fraction: float = 1.0,
+    liquidity_fill_fraction: float = 0.25,
     liquidity_missing_depth_policy: str = "skip",
 ) -> SimulationResult:
     market_csv = Path(market_csv)
-    output_csv = Path(output_csv)
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    output_csv = Path(output_csv) if output_csv is not None else None
+    if output_csv is not None:
+        output_csv.parent.mkdir(parents=True, exist_ok=True)
 
     ticks = load_market_ticks(market_csv)
     if not ticks:
@@ -171,12 +172,21 @@ def run_simulation(
             execution_usd_amount = liquidity["executable_usd_amount"]
             max_buy_usd = liquidity["max_buy_usd"]
             max_sell_tokens = liquidity["max_sell_tokens"]
+            execution_up_price, execution_down_price = liquidity_execution_prices(
+                action=decision.action,
+                row_metrics=tick.extra,
+                fallback_up_price=tick.up_price,
+                fallback_down_price=tick.down_price,
+            )
+        else:
+            execution_up_price = tick.up_price
+            execution_down_price = tick.down_price
         events = execute_action(
             portfolio=portfolio,
             action=decision.action,
             timestamp=tick.timestamp,
-            up_price=tick.up_price,
-            down_price=tick.down_price,
+            up_price=execution_up_price,
+            down_price=execution_down_price,
             usd_amount=execution_usd_amount,
             max_buy_usd=max_buy_usd,
             max_sell_tokens=max_sell_tokens,
@@ -207,6 +217,8 @@ def run_simulation(
             "reason": decision.reason,
             "usd_amount": decision_usd_amount,
             "executed_usd_amount": execution_usd_amount,
+            "execution_up_price": execution_up_price,
+            "execution_down_price": execution_down_price,
             "liquidity_aware_execution": liquidity_aware_execution,
             "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
             "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
@@ -238,17 +250,18 @@ def run_simulation(
         "reward_to_go",
     ]
 
-    with output_csv.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
+    if output_csv is not None:
+        with output_csv.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
 
-        for row in rows:
-            row = dict(row)
-            row["final_outcome"] = resolved_outcome
-            row["final_balance"] = final_balance
-            row["total_reward"] = total_reward
-            row["reward_to_go"] = final_balance - float(row["balance_before"])
-            writer.writerow(row)
+            for row in rows:
+                row = dict(row)
+                row["final_outcome"] = resolved_outcome
+                row["final_balance"] = final_balance
+                row["total_reward"] = total_reward
+                row["reward_to_go"] = final_balance - float(row["balance_before"])
+                writer.writerow(row)
 
     return SimulationResult(
         market_file=str(market_csv),
@@ -269,7 +282,7 @@ def run_from_config(
     final_outcome: str | None = None,
     liquidity_aware_execution: bool = False,
     liquidity_depth_window_cents: int = 2,
-    liquidity_fill_fraction: float = 1.0,
+    liquidity_fill_fraction: float = 0.25,
     liquidity_missing_depth_policy: str = "skip",
 ):
     strategy, cfg = load_strategy_from_yaml(strategy_config)

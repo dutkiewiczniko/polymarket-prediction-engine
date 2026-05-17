@@ -13,8 +13,34 @@ output_root: runs
 # Leave blank to run every cleaned market CSV in data/.
 max_markets:
 
-starting_balance: 100
+starting_balance: 1000
 order_usd: 1
+compound_balance: true
+effective_market_balance_cap: 1000
+
+# Default bankroll model for new batch runs:
+# master balance compounds, but each market simulates only a banded effective balance.
+# This keeps order sizing closer to live inference and avoids scaling a whole bankroll into one market.
+effective_market_balance_bands:
+  - [31.25, 62.5, 3]
+  - [62.5, 125, 6]
+  - [125, 250, 12]
+  - [250, 500, 25]
+  - [500, 1000, 50]
+  - [1000, 2000, 100]
+  - [2000, 4000, 200]
+  - [4000, 8000, 400]
+  - [8000, 16000, 800]
+  - [16000, 32000, 1600]
+  - [32000, 64000, 3200]
+  - [64000, 128000, 6400]
+  - [128000, 256000, 12800]
+  - [256000, 512000, 25600]
+  - [512000, 1024000, 51200]
+  - [1024000, 2048000, 102400]
+  - [2048000, null, 1000]
+
+effective_market_balance_default: 0
 
 # Leave this blank to infer UP/DOWN from final BTC versus price_to_beat.
 # Later we should read the actual resolved Polymarket outcome where possible.

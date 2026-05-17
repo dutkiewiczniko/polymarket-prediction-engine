@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import csv
+import fnmatch
 import json
 import os
 import re
@@ -33,7 +34,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from simulator.config_loader import build_strategy_from_config, load_yaml
 from simulator.execution import execute_action
-from simulator.liquidity import liquidity_limits_for_action
+from simulator.liquidity import liquidity_execution_prices, liquidity_limits_for_action
 from simulator.batch import resolve_effective_market_balance
 from simulator.models import DecisionState, MarketTick
 from simulator.portfolio import Portfolio
@@ -100,6 +101,8 @@ TRAJECTORY_COLUMNS = [
     "reason",
     "usd_amount",
     "executed_usd_amount",
+    "execution_up_price",
+    "execution_down_price",
     "liquidity_aware_execution",
     "liquidity_depth_window_cents",
     "liquidity_fill_fraction",
@@ -181,7 +184,7 @@ def parse_args():
         help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances.",
     )
     parser.add_argument("--run-id", default="", help="Optional run folder name under runs/live_strategy_suite.")
-    parser.add_argument("--port", type=int, default=5052, help="Local dashboard port.")
+    parser.add_argument("--port", type=int, default=5062, help="Local dashboard port.")
     parser.add_argument("--max-markets", type=int, default=0, help="Stop after this many completed markets. 0 means run forever.")
     parser.add_argument(
         "--execution-mode",
@@ -213,6 +216,23 @@ def parse_args():
         help="Skip real orders this close to market end.",
     )
     parser.add_argument(
+        "--real-strategy-pattern",
+        default="",
+        help="Only submit real orders for strategy names matching this fnmatch pattern. Empty means all strategies.",
+    )
+    parser.add_argument(
+        "--real-max-market-buy-usd",
+        type=float,
+        default=0.0,
+        help="Optional hard cap on total real BUY notional per market across submitted strategies. 0 disables.",
+    )
+    parser.add_argument(
+        "--real-max-run-buy-usd",
+        type=float,
+        default=0.0,
+        help="Optional hard cap on total real BUY notional for this process. 0 disables.",
+    )
+    parser.add_argument(
         "--trajectory-log-mode",
         choices=["all", "actions"],
         default="all",
@@ -232,7 +252,7 @@ def parse_args():
     )
     parser.add_argument("--liquidity-aware-execution", action="store_true", help="Cap paper fills using logged orderbook depth.")
     parser.add_argument("--liquidity-depth-window-cents", type=int, default=2, help="Use visible depth within this many cents.")
-    parser.add_argument("--liquidity-fill-fraction", type=float, default=1.0, help="Fraction of visible depth considered fillable.")
+    parser.add_argument("--liquidity-fill-fraction", type=float, default=0.25, help="Fraction of visible depth considered fillable.")
     parser.add_argument(
         "--liquidity-missing-depth-policy",
         choices=["skip", "allow"],
@@ -667,6 +687,8 @@ class LiveStrategySuite:
         self.ensure_summary_header()
         self.ensure_real_order_header()
         self.real_executor = None
+        self.real_market_buy_usd = 0.0
+        self.real_run_buy_usd = 0.0
         if args.execution_mode == "real":
             self.real_executor = RealOrderExecutor(
                 order_type=args.real_order_type,
@@ -691,6 +713,7 @@ class LiveStrategySuite:
             "orderbook_hashes": {},
         }
         self.current_market = None
+        self.market_path = None
         self.market_file = None
         self.market_writer = None
         self.latest_non_hold_actions = []
@@ -755,6 +778,8 @@ class LiveStrategySuite:
             runtime.reset_for_market(market_starting_balance)
 
         market_path = self.market_data_dir / f"{market['slug']}.csv"
+        self.market_path = market_path
+        self.real_market_buy_usd = 0.0
         self.market_file = market_path.open("w", newline="", encoding="utf-8")
         self.market_writer = csv.writer(self.market_file)
         self.market_writer.writerow(MARKET_CSV_HEADER)
@@ -798,13 +823,72 @@ class LiveStrategySuite:
         print(f"Run dir: {self.run_dir}")
         if self.args.execution_mode == "real":
             print(f"Real order log: {self.real_order_path}")
+            if self.args.real_strategy_pattern:
+                print(f"Real strategy pattern: {self.args.real_strategy_pattern}")
+            if self.args.real_max_market_buy_usd > 0:
+                print(f"Real market buy cap: {self.args.real_max_market_buy_usd:.2f}")
+            if self.args.real_max_run_buy_usd > 0:
+                print(f"Real run buy cap: {self.args.real_max_run_buy_usd:.2f}")
         print("=" * 80)
+
+    def submit_real_event(self, *, runtime: StrategyRuntime, event, market, seconds_left):
+        pattern = str(self.args.real_strategy_pattern or "").strip()
+        if pattern and not fnmatch.fnmatch(runtime.name, pattern):
+            return {
+                "token_id": "",
+                "amount": "",
+                "amount_type": "",
+                "status": "skipped",
+                "response": "",
+                "error": f"strategy {runtime.name!r} does not match real_strategy_pattern {pattern!r}",
+            }
+
+        if event.action == "buy":
+            amount = float(event.usd_amount)
+            market_cap = float(self.args.real_max_market_buy_usd or 0.0)
+            if market_cap > 0 and self.real_market_buy_usd + amount > market_cap:
+                return {
+                    "token_id": "",
+                    "amount": amount,
+                    "amount_type": "usdc",
+                    "status": "skipped",
+                    "response": "",
+                    "error": (
+                        f"real market buy cap exceeded: "
+                        f"{self.real_market_buy_usd + amount:.4f} > {market_cap:.4f}"
+                    ),
+                }
+            run_cap = float(self.args.real_max_run_buy_usd or 0.0)
+            if run_cap > 0 and self.real_run_buy_usd + amount > run_cap:
+                return {
+                    "token_id": "",
+                    "amount": amount,
+                    "amount_type": "usdc",
+                    "status": "skipped",
+                    "response": "",
+                    "error": (
+                        f"real run buy cap exceeded: "
+                        f"{self.real_run_buy_usd + amount:.4f} > {run_cap:.4f}"
+                    ),
+                }
+
+        result = self.real_executor.submit_event(
+            event=event,
+            market=market,
+            seconds_left=seconds_left,
+        )
+        if event.action == "buy" and result.get("status") == "submitted":
+            amount = float(event.usd_amount)
+            self.real_market_buy_usd += amount
+            self.real_run_buy_usd += amount
+        return result
 
     def end_market(self):
         if self.market_file:
             self.market_file.close()
             self.market_file = None
             self.market_writer = None
+            self.market_path = None
 
         if not self.current_market:
             return
@@ -955,10 +1039,23 @@ class LiveStrategySuite:
             self.state["orderbook_hashes"] = next_hashes
 
     def append_market_row(self, row):
-        if not self.market_writer or not self.market_file:
+        if not self.market_path:
             return
-        self.market_writer.writerow([format_csv_value(row.get(column)) for column in MARKET_CSV_HEADER])
-        self.market_file.flush()
+        if not self.market_writer or not self.market_file or self.market_file.closed:
+            self.market_file = self.market_path.open("a", newline="", encoding="utf-8")
+            self.market_writer = csv.writer(self.market_file)
+        try:
+            self.market_writer.writerow([format_csv_value(row.get(column)) for column in MARKET_CSV_HEADER])
+            self.market_file.flush()
+        except OSError as exc:
+            print(f"Market CSV write skipped for {self.market_path}: {type(exc).__name__}: {exc}")
+            try:
+                if self.market_file and not self.market_file.closed:
+                    self.market_file.close()
+            except OSError:
+                pass
+            self.market_file = None
+            self.market_writer = None
 
     def build_tick(self, row):
         return MarketTick(
@@ -1020,13 +1117,22 @@ class LiveStrategySuite:
                 execution_usd_amount = liquidity["executable_usd_amount"]
                 max_buy_usd = liquidity["max_buy_usd"]
                 max_sell_tokens = liquidity["max_sell_tokens"]
+                execution_up_price, execution_down_price = liquidity_execution_prices(
+                    action=decision.action,
+                    row_metrics=row,
+                    fallback_up_price=row["up_price"],
+                    fallback_down_price=row["down_price"],
+                )
+            else:
+                execution_up_price = row["up_price"]
+                execution_down_price = row["down_price"]
             spend_before = runtime.market_spend_used
             events = execute_action(
                 portfolio=runtime.portfolio,
                 action=decision.action,
                 timestamp=row["timestamp"],
-                up_price=row["up_price"],
-                down_price=row["down_price"],
+                up_price=execution_up_price,
+                down_price=execution_down_price,
                 usd_amount=execution_usd_amount,
                 max_buy_usd=max_buy_usd,
                 max_sell_tokens=max_sell_tokens,
@@ -1038,7 +1144,8 @@ class LiveStrategySuite:
                     runtime.event_counts[key] += 1
                 if self.real_executor is not None:
                     try:
-                        result = self.real_executor.submit_event(
+                        result = self.submit_real_event(
+                            runtime=runtime,
                             event=event,
                             market=self.current_market,
                             seconds_left=tick.seconds_left,
@@ -1091,6 +1198,8 @@ class LiveStrategySuite:
                 "reason": decision.reason,
                 "usd_amount": usd_amount,
                 "executed_usd_amount": execution_usd_amount,
+                "execution_up_price": execution_up_price,
+                "execution_down_price": execution_down_price,
                 "liquidity_aware_execution": self.args.liquidity_aware_execution,
                 "liquidity_depth_window_cents": self.args.liquidity_depth_window_cents if self.args.liquidity_aware_execution else "",
                 "liquidity_fill_fraction": self.args.liquidity_fill_fraction if self.args.liquidity_aware_execution else "",
@@ -1545,6 +1654,10 @@ def render_static_summary(run_dir, summary_path, summary):
         for row in recent
     )
     reward_header = "".join(f"<th>{esc(name)}</th>" for name in strategy_order)
+    reward_header_sortable = "".join(
+        f"<th>{esc(name)}<span class=\"sort-indicator\"></span></th>"
+        for name in strategy_order
+    )
     reward_rows = "\n".join(
         "<tr>"
         f"<td>{row['market_index']}</td><td>{esc(row['market_slug'])}</td><td>{esc(row['final_outcome'])}</td>"
@@ -1574,6 +1687,9 @@ def render_static_summary(run_dir, summary_path, summary):
     table {{ width:100%; border-collapse:collapse; background:#121824; }}
     th, td {{ padding:9px 10px; border-bottom:1px solid #2a3345; text-align:left; font-size:13px; }}
     th {{ color:#8ec1ff; }}
+    table.sortable th {{ cursor:pointer; user-select:none; white-space:nowrap; }}
+    table.sortable th:hover {{ background:#1a2433; }}
+    .sort-indicator {{ color:#9aa5b7; font-size:10px; margin-left:5px; }}
     .pos {{ color:#6fd38b; }}
     .neg {{ color:#ff7d7d; }}
   </style>
@@ -1587,7 +1703,7 @@ def render_static_summary(run_dir, summary_path, summary):
   <main>
     <section>
       <h2>Performance Summary</h2>
-      <table><thead><tr><th>Strategy</th><th>Markets</th><th>Mean Reward</th><th>Total Reward</th><th>Win Rate</th><th>Orders</th></tr></thead><tbody>{leader_rows}</tbody></table>
+      <table class="sortable"><thead><tr><th>Strategy<span class="sort-indicator"></span></th><th>Markets<span class="sort-indicator"></span></th><th>Mean Reward<span class="sort-indicator"></span></th><th>Total Reward<span class="sort-indicator"></span></th><th>Win Rate<span class="sort-indicator"></span></th><th>Orders<span class="sort-indicator"></span></th></tr></thead><tbody>{leader_rows}</tbody></table>
     </section>
     <section>
       <h2>Balance Paths By Strategy</h2>
@@ -1596,13 +1712,50 @@ def render_static_summary(run_dir, summary_path, summary):
     </section>
     <section>
       <h2>Reward By Market</h2>
-      <div class="table-scroll"><table><thead><tr><th>#</th><th>Market</th><th>Outcome</th>{reward_header}</tr></thead><tbody>{reward_rows}</tbody></table></div>
+      <div class="table-scroll"><table class="sortable"><thead><tr><th>#<span class="sort-indicator"></span></th><th>Market<span class="sort-indicator"></span></th><th>Outcome<span class="sort-indicator"></span></th>{reward_header_sortable}</tr></thead><tbody>{reward_rows}</tbody></table></div>
     </section>
     <section>
       <h2>Recent Results</h2>
-      <table><thead><tr><th>Market</th><th>Strategy</th><th>Outcome</th><th>Reward</th><th>Orders</th></tr></thead><tbody>{recent_rows}</tbody></table>
+      <table class="sortable"><thead><tr><th>Market<span class="sort-indicator"></span></th><th>Strategy<span class="sort-indicator"></span></th><th>Outcome<span class="sort-indicator"></span></th><th>Reward<span class="sort-indicator"></span></th><th>Orders<span class="sort-indicator"></span></th></tr></thead><tbody>{recent_rows}</tbody></table>
     </section>
   </main>
+<script>
+function parseCellValue(text) {{
+  const value = (text || '').trim().replace(/,/g, '');
+  if (value.endsWith('%')) {{
+    const pct = Number(value.slice(0, -1));
+    if (!Number.isNaN(pct)) return pct;
+  }}
+  const num = Number(value);
+  return Number.isNaN(num) ? value.toLowerCase() : num;
+}}
+function compareValues(a, b) {{
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, {{ numeric: true, sensitivity: 'base' }});
+}}
+document.querySelectorAll('table.sortable').forEach(table => {{
+  table.querySelectorAll('th').forEach((header, columnIndex) => {{
+    header.addEventListener('click', () => {{
+      const current = table.dataset.sortColumn === String(columnIndex) ? table.dataset.sortDirection : '';
+      const direction = current === 'asc' ? 'desc' : 'asc';
+      table.dataset.sortColumn = String(columnIndex);
+      table.dataset.sortDirection = direction;
+      table.querySelectorAll('.sort-indicator').forEach(item => item.textContent = '');
+      const indicator = header.querySelector('.sort-indicator');
+      if (indicator) indicator.textContent = direction === 'asc' ? '▲' : '▼';
+      const tbody = table.tBodies[0];
+      const rows = Array.from(tbody.rows);
+      rows.sort((rowA, rowB) => {{
+        const a = parseCellValue(rowA.children[columnIndex]?.textContent || '');
+        const b = parseCellValue(rowB.children[columnIndex]?.textContent || '');
+        const result = compareValues(a, b);
+        return direction === 'asc' ? result : -result;
+      }});
+      rows.forEach(row => tbody.appendChild(row));
+    }});
+  }});
+}});
+</script>
 </body>
 </html>"""
 
@@ -1636,6 +1789,9 @@ DASHBOARD_HTML = """
     table { width:100%; border-collapse:collapse; background:#101722; }
     th, td { padding:8px 10px; border-bottom:1px solid #273246; font-size:12px; text-align:left; }
     th { color:#8ec1ff; }
+    table.sortable th { cursor:pointer; user-select:none; white-space:nowrap; }
+    table.sortable th:hover { background:#192233; }
+    .sort-indicator { color:#98a4b5; font-size:10px; margin-left:5px; }
     .green { color:#6fd38b; }
     .red { color:#ff7d7d; }
     .muted { color:#98a4b5; }
@@ -1667,21 +1823,21 @@ DASHBOARD_HTML = """
   <div class="tables">
     <div>
       <h3>Live Leaderboard</h3>
-      <table>
+      <table class="sortable" data-sort-key="liveLeaderboard">
         <thead><tr><th>Strategy</th><th>Reward</th><th>Market Bal</th><th>Master</th><th>Eff Start</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
         <tbody id="leaderboard"></tbody>
       </table>
     </div>
     <div>
       <h3>Recent Actions</h3>
-      <table>
+      <table class="sortable" data-sort-key="recentActions">
         <thead><tr><th>Time</th><th>Strategy</th><th>Action</th><th>Reason</th></tr></thead>
         <tbody id="actions"></tbody>
       </table>
     </div>
     <div>
       <h3>Completed Markets</h3>
-      <table>
+      <table class="sortable" data-sort-key="completedMarkets">
         <thead><tr><th>Market</th><th>Outcome</th><th>Top Strategy</th><th>Top Reward</th></tr></thead>
         <tbody id="completed"></tbody>
       </table>
@@ -1690,7 +1846,7 @@ DASHBOARD_HTML = """
   <div class="below">
     <div class="table-panel">
       <h3>Performance Summary</h3>
-      <table>
+      <table class="sortable" data-sort-key="performanceSummary">
         <thead><tr><th>Strategy</th><th>Markets</th><th>Mean Reward</th><th>Total Reward</th><th>Win Rate</th><th>Orders</th></tr></thead>
         <tbody id="completedStats"></tbody>
       </table>
@@ -1707,9 +1863,66 @@ DASHBOARD_HTML = """
   </div>
 <script>
 const socket = io();
+const sortState = {};
 function fmtMoney(x){ return x == null || x === '' ? '--' : Number(x).toFixed(2); }
 function fmtNum(x, d=3){ return x == null || x === '' ? '--' : Number(x).toFixed(d); }
 function clsReward(x){ return Number(x) > 0 ? 'green' : Number(x) < 0 ? 'red' : ''; }
+function parseCellValue(text){
+  const value = (text || '').trim().replace(/,/g, '');
+  if (value === '--' || value === '') return '';
+  if (value.endsWith('%')) {
+    const pct = Number(value.slice(0, -1));
+    if (!Number.isNaN(pct)) return pct;
+  }
+  const num = Number(value);
+  return Number.isNaN(num) ? value.toLowerCase() : num;
+}
+function compareValues(a, b){
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+function ensureSortableTables(root=document){
+  root.querySelectorAll('table.sortable').forEach((table, tableIndex) => {
+    if (!table.dataset.sortKey) table.dataset.sortKey = 'table-' + tableIndex;
+    table.querySelectorAll('th').forEach((header, columnIndex) => {
+      if (!header.querySelector('.sort-indicator')) {
+        const indicator = document.createElement('span');
+        indicator.className = 'sort-indicator';
+        header.appendChild(indicator);
+      }
+      if (header.dataset.sortReady === '1') return;
+      header.dataset.sortReady = '1';
+      header.addEventListener('click', () => {
+        const state = sortState[table.dataset.sortKey] || {};
+        const direction = state.column === columnIndex && state.direction === 'asc' ? 'desc' : 'asc';
+        sortState[table.dataset.sortKey] = { column: columnIndex, direction };
+        applyTableSort(table);
+      });
+    });
+  });
+}
+function applyTableSort(table){
+  const state = sortState[table.dataset.sortKey];
+  if (!state) return;
+  const tbody = table.tBodies[0];
+  if (!tbody) return;
+  table.querySelectorAll('.sort-indicator').forEach(item => item.textContent = '');
+  const header = table.querySelectorAll('th')[state.column];
+  const indicator = header ? header.querySelector('.sort-indicator') : null;
+  if (indicator) indicator.textContent = state.direction === 'asc' ? '▲' : '▼';
+  const rows = Array.from(tbody.rows);
+  rows.sort((rowA, rowB) => {
+    const a = parseCellValue(rowA.children[state.column]?.textContent || '');
+    const b = parseCellValue(rowB.children[state.column]?.textContent || '');
+    const result = compareValues(a, b);
+    return state.direction === 'asc' ? result : -result;
+  });
+  rows.forEach(row => tbody.appendChild(row));
+}
+function applyAllSorts(root=document){
+  ensureSortableTables(root);
+  root.querySelectorAll('table.sortable').forEach(applyTableSort);
+}
 function cumulativeSvg(summary){
   const order = (summary.strategy_order || []).slice(0, 12);
   const paths = summary.cumulative_paths || {};
@@ -1749,12 +1962,13 @@ function renderCompletedSummary(summary){
   ).join('');
   document.getElementById('completedChart').innerHTML = cumulativeSvg(summary);
   const order = summary.strategy_order || [];
-  const header = '<table><thead><tr><th>#</th><th>Market</th><th>Outcome</th>' + order.map(s => `<th>${s}</th>`).join('') + '</tr></thead><tbody>';
+  const header = '<table class="sortable" data-sort-key="marketRewards"><thead><tr><th>#</th><th>Market</th><th>Outcome</th>' + order.map(s => `<th>${s}</th>`).join('') + '</tr></thead><tbody>';
   const rows = (summary.market_rewards || []).slice(-80).map(m =>
     '<tr><td>'+m.market_index+'</td><td>'+m.market_slug+'</td><td>'+m.final_outcome+'</td>' +
     order.map(s => `<td class="${clsReward(m.rewards[s])}">${fmtMoney(m.rewards[s] || 0)}</td>`).join('') + '</tr>'
   ).join('');
   document.getElementById('marketRewardTable').innerHTML = header + rows + '</tbody></table>';
+  applyAllSorts(document.querySelector('.below'));
 }
 socket.on('tick', d => {
   document.getElementById('run').textContent = d.run_dir || '--';
@@ -1778,7 +1992,9 @@ socket.on('tick', d => {
     '<tr><td>'+m.market_slug+'</td><td>'+m.final_outcome+'</td><td>'+m.top_strategy+'</td><td>'+fmtMoney(m.top_reward)+'</td></tr>'
   ).join('');
   renderCompletedSummary(d.completed_summary);
+  applyAllSorts();
 });
+applyAllSorts();
 </script>
 </body>
 </html>

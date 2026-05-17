@@ -29,6 +29,8 @@ withdrawal_thresholds:
 # [min_total_balance, max_total_balance, effective_market_balance]
 # Order sizes use balance_scaled_token_amount * effective_market_balance / 100.
 effective_market_balance_bands:
+  - [1, 10, 1]
+  - [10, 31.25, 1.5]
   - [31.25, 62.5, 3]
   - [62.5, 125, 6]
   - [125, 250, 12]
