@@ -173,6 +173,7 @@ def run_batch(
     liquidity_depth_window_cents = int(batch_cfg.get("liquidity_depth_window_cents", 2))
     liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 0.25))
     liquidity_missing_depth_policy = str(batch_cfg.get("liquidity_missing_depth_policy", "skip"))
+    min_order_usd = float(batch_cfg.get("min_order_usd", 0.0))
     write_trajectories = bool(batch_cfg.get("write_trajectories", True))
 
     markets = discover_market_csvs(markets_folder, market_pattern)
@@ -211,6 +212,7 @@ def run_batch(
         "liquidity_depth_window_cents",
         "liquidity_fill_fraction",
         "liquidity_missing_depth_policy",
+        "min_order_usd",
         "error_type",
         "error_message",
     ]
@@ -237,6 +239,7 @@ def run_batch(
     print(f"Total simulations: {total_jobs}")
     print(f"Compound balances: {compound_balance}")
     print(f"Liquidity-aware execution: {liquidity_aware_execution}")
+    print(f"Min order USD: {min_order_usd:.4f}")
     print(f"Write trajectories: {write_trajectories}")
     print()
 
@@ -287,6 +290,7 @@ def run_batch(
                         liquidity_depth_window_cents=liquidity_depth_window_cents,
                         liquidity_fill_fraction=liquidity_fill_fraction,
                         liquidity_missing_depth_policy=liquidity_missing_depth_policy,
+                        min_order_usd=min_order_usd,
                     )
 
                     result_dict = asdict(result)
@@ -312,6 +316,7 @@ def run_batch(
                         "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
                         "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
                         "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
+                        "min_order_usd": min_order_usd,
                         "error_type": "",
                         "error_message": "",
                         **result_dict,
@@ -345,6 +350,7 @@ def run_batch(
                         "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
                         "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
                         "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
+                        "min_order_usd": min_order_usd,
                         "error_type": type(e).__name__,
                         "error_message": str(e),
                     }

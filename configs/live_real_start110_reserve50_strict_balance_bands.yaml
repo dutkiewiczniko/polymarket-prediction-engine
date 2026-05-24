@@ -1,0 +1,32 @@
+# Stricter real-money balance settings for live_strategy_suite.py.
+#
+# Same wallet/reserve assumption as live_real_start110_reserve50_balance_bands.yaml:
+# - total account balance around 110
+# - 50 is treated as untouched reserve
+# - 60 is treated as tradable master balance
+#
+# This version scales effective market balance more slowly to reduce drawdowns.
+
+starting_balance: 60
+initial_reserved_balance: 50
+effective_market_balance_cap: 240
+
+# Reserve 10% of tradable master balance once when each 10x threshold is crossed.
+withdrawal_pct: 0.10
+withdrawal_thresholds:
+  - 100
+  - 1000
+  - 10000
+  - 100000
+  - 1000000
+
+# [min_tradable_master_balance, max_tradable_master_balance, effective_market_balance]
+effective_market_balance_bands:
+  - [1, 16, 1]
+  - [16, 300, 15]
+  - [300, 750, 30]
+  - [750, 1500, 60]
+  - [1500, 3000, 120]
+  - [3000, null, 240]
+
+effective_market_balance_default: 0

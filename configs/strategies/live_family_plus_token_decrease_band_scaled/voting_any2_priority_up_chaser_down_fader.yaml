@@ -1,0 +1,26 @@
+name: family_voting_any2_priority_up_chaser_down_fader
+type: voting_ensemble
+starting_balance: 100
+order_usd: 1
+
+params:
+  min_votes: 2
+  max_orders: 50
+  cooldown_ticks: 3
+  default_scale: 0.75
+  priority_scale: 0.65
+  priority_members:
+    - family_up_bias_chaser
+    - family_down_bias_fader
+
+  members:
+    - label: family_neutral_fader
+      config: configs/strategies/live_family_plus_token_decrease_band_scaled/neutral_fader_tp095_cheap0025.yaml
+    - label: family_neutral_chaser
+      config: configs/strategies/live_family_plus_token_decrease_band_scaled/neutral_chaser_tp095_cheap0025_tok25.yaml
+    - label: family_cheap_lottery_only
+      config: configs/strategies/live_family_plus_token_decrease_band_scaled/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    - label: family_up_bias_chaser
+      config: configs/strategies/live_family_plus_token_decrease_band_scaled/up_bias_chaser_tp095_cheap0025_tok20.yaml
+    - label: family_down_bias_fader
+      config: configs/strategies/live_family_plus_token_decrease_band_scaled/down_bias_fader_tp095_cheap0025.yaml

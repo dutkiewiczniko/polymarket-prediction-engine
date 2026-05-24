@@ -14,6 +14,7 @@ def execute_action(
     sell_opposite_first: bool = True,
     max_buy_usd: float | None = None,
     max_sell_tokens: float | None = None,
+    min_order_usd: float = 0.0,
     reason: str = "",
 ) -> list[TradeEvent]:
     """Apply one action to the portfolio.
@@ -41,33 +42,54 @@ def execute_action(
 
     if action == "buy_up":
         if sell_opposite_first and portfolio.down_tokens > 0:
-            events.extend(_sell_down(portfolio, timestamp, down_price, reason="exit down before buy_up", max_tokens=max_sell_tokens))
+            events.extend(_sell_down(
+                portfolio,
+                timestamp,
+                down_price,
+                reason="exit down before buy_up",
+                max_tokens=max_sell_tokens,
+                min_order_usd=min_order_usd,
+            ))
         if max_buy_usd is not None:
             usd_amount = min(usd_amount, max(0.0, max_buy_usd))
-        events.extend(_buy_up(portfolio, timestamp, up_price, usd_amount, reason))
+        events.extend(_buy_up(portfolio, timestamp, up_price, usd_amount, reason, min_order_usd=min_order_usd))
         return events
 
     if action == "buy_down":
         if sell_opposite_first and portfolio.up_tokens > 0:
-            events.extend(_sell_up(portfolio, timestamp, up_price, reason="exit up before buy_down", max_tokens=max_sell_tokens))
+            events.extend(_sell_up(
+                portfolio,
+                timestamp,
+                up_price,
+                reason="exit up before buy_down",
+                max_tokens=max_sell_tokens,
+                min_order_usd=min_order_usd,
+            ))
         if max_buy_usd is not None:
             usd_amount = min(usd_amount, max(0.0, max_buy_usd))
-        events.extend(_buy_down(portfolio, timestamp, down_price, usd_amount, reason))
+        events.extend(_buy_down(portfolio, timestamp, down_price, usd_amount, reason, min_order_usd=min_order_usd))
         return events
 
     if action == "sell_up":
-        events.extend(_sell_up(portfolio, timestamp, up_price, reason, max_tokens=max_sell_tokens))
+        events.extend(_sell_up(portfolio, timestamp, up_price, reason, max_tokens=max_sell_tokens, min_order_usd=min_order_usd))
         return events
 
     if action == "sell_down":
-        events.extend(_sell_down(portfolio, timestamp, down_price, reason, max_tokens=max_sell_tokens))
+        events.extend(_sell_down(portfolio, timestamp, down_price, reason, max_tokens=max_sell_tokens, min_order_usd=min_order_usd))
         return events
 
     raise ValueError(f"Unknown action: {action!r}")
 
 
-def _buy_up(portfolio: Portfolio, timestamp: str, price: float, usd_amount: float, reason: str) -> list[TradeEvent]:
-    if price <= 0 or usd_amount <= 0 or portfolio.cash < usd_amount:
+def _buy_up(
+    portfolio: Portfolio,
+    timestamp: str,
+    price: float,
+    usd_amount: float,
+    reason: str,
+    min_order_usd: float = 0.0,
+) -> list[TradeEvent]:
+    if price <= 0 or usd_amount <= 0 or portfolio.cash < usd_amount or usd_amount < min_order_usd:
         return []
 
     tokens = usd_amount / price
@@ -88,8 +110,15 @@ def _buy_up(portfolio: Portfolio, timestamp: str, price: float, usd_amount: floa
     )]
 
 
-def _buy_down(portfolio: Portfolio, timestamp: str, price: float, usd_amount: float, reason: str) -> list[TradeEvent]:
-    if price <= 0 or usd_amount <= 0 or portfolio.cash < usd_amount:
+def _buy_down(
+    portfolio: Portfolio,
+    timestamp: str,
+    price: float,
+    usd_amount: float,
+    reason: str,
+    min_order_usd: float = 0.0,
+) -> list[TradeEvent]:
+    if price <= 0 or usd_amount <= 0 or portfolio.cash < usd_amount or usd_amount < min_order_usd:
         return []
 
     tokens = usd_amount / price
@@ -110,7 +139,14 @@ def _buy_down(portfolio: Portfolio, timestamp: str, price: float, usd_amount: fl
     )]
 
 
-def _sell_up(portfolio: Portfolio, timestamp: str, price: float, reason: str, max_tokens: float | None = None) -> list[TradeEvent]:
+def _sell_up(
+    portfolio: Portfolio,
+    timestamp: str,
+    price: float,
+    reason: str,
+    max_tokens: float | None = None,
+    min_order_usd: float = 0.0,
+) -> list[TradeEvent]:
     if price <= 0 or portfolio.up_tokens <= 0:
         return []
 
@@ -120,6 +156,8 @@ def _sell_up(portfolio: Portfolio, timestamp: str, price: float, reason: str, ma
     if tokens <= 0:
         return []
     revenue = tokens * price
+    if revenue < min_order_usd:
+        return []
     portfolio.cash += revenue
     portfolio.up_tokens -= tokens
 
@@ -137,7 +175,14 @@ def _sell_up(portfolio: Portfolio, timestamp: str, price: float, reason: str, ma
     )]
 
 
-def _sell_down(portfolio: Portfolio, timestamp: str, price: float, reason: str, max_tokens: float | None = None) -> list[TradeEvent]:
+def _sell_down(
+    portfolio: Portfolio,
+    timestamp: str,
+    price: float,
+    reason: str,
+    max_tokens: float | None = None,
+    min_order_usd: float = 0.0,
+) -> list[TradeEvent]:
     if price <= 0 or portfolio.down_tokens <= 0:
         return []
 
@@ -147,6 +192,8 @@ def _sell_down(portfolio: Portfolio, timestamp: str, price: float, reason: str, 
     if tokens <= 0:
         return []
     revenue = tokens * price
+    if revenue < min_order_usd:
+        return []
     portfolio.cash += revenue
     portfolio.down_tokens -= tokens
 

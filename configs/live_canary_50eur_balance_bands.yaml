@@ -1,0 +1,17 @@
+# Low-risk canary balance settings for live_strategy_suite.py.
+# The effective market balance stays tiny even if the account starts at 50.
+
+starting_balance: 50
+effective_market_balance_cap:
+
+# Virtual withdrawal/reserve rules are disabled for the canary.
+withdrawal_pct: 0
+withdrawal_thresholds: []
+
+# [min_total_balance, max_total_balance, effective_market_balance]
+# Below 10, trade with 1. From 10 upward, trade with 1.5.
+effective_market_balance_bands:
+  - [1, 10, 1]
+  - [10, null, 1.5]
+
+effective_market_balance_default: 0

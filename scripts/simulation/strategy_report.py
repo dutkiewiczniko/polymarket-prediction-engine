@@ -755,7 +755,11 @@ def render_report(
     strategy_count = int(summary_df["strategy_key"].nunique())
     best = stats_df.iloc[0] if not stats_df.empty else {}
 
-    stats_with_actions = stats_df.merge(action_df, on="strategy_key", how="left") if not stats_df.empty else stats_df
+    stats_with_actions = (
+        stats_df.merge(action_df, on="strategy_key", how="left")
+        if not stats_df.empty and "strategy_key" in action_df.columns
+        else stats_df.copy()
+    )
     stats_columns = [
         "strategy_key",
         "runs",

@@ -1,0 +1,39 @@
+batch_id: up_bias_chaser_only_start60_scaled_eff15_liquidity_all_20260519_summary
+
+markets_folder: simulator_ready_markets_liquidity_all_20260519
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+write_trajectories: false
+
+starting_balance: 60
+order_usd: 1
+compound_balance: true
+effective_market_balance_cap:
+
+effective_market_balance_bands:
+  - [1, 16, 1]
+  - [16, 150, 15]
+  - [150, 300, 30]
+  - [300, 600, 60]
+  - [600, 1200, 120]
+  - [1200, 2400, 240]
+  - [2400, 4800, 480]
+  - [4800, 9600, 960]
+  - [9600, 19200, 1920]
+  - [19200, null, 3840]
+
+effective_market_balance_default: 0
+
+min_order_usd: 1.0
+liquidity_aware_execution: true
+liquidity_depth_window_cents: 2
+liquidity_fill_fraction: 1.0
+liquidity_missing_depth_policy: skip
+
+final_outcome:
+
+strategies:
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/up_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_up_bias_chaser_scaled_eff15

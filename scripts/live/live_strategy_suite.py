@@ -43,6 +43,7 @@ from simulator.strategies import StrategyDecision
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 CLOB_API = "https://clob.polymarket.com"
+GEOBLOCK_API = "https://polymarket.com/api/geoblock"
 RTDS_URL = "wss://ws-live-data.polymarket.com"
 BINANCE_WS = "wss://stream.binance.com:9443/ws/btcusdt@ticker"
 
@@ -101,6 +102,8 @@ TRAJECTORY_COLUMNS = [
     "reason",
     "usd_amount",
     "executed_usd_amount",
+    "min_order_usd",
+    "min_order_sizing_floor_applied",
     "execution_up_price",
     "execution_down_price",
     "liquidity_aware_execution",
@@ -206,8 +209,8 @@ def parse_args():
     parser.add_argument(
         "--real-max-order-usd",
         type=float,
-        default=5.0,
-        help="Hard cap for each real BUY order in USDC.",
+        default=0.0,
+        help="Optional hard cap for each real BUY order in USDC. 0 disables and lets the strategy size orders.",
     )
     parser.add_argument(
         "--real-min-seconds-left",
@@ -245,6 +248,11 @@ def parse_args():
         help="Only infer price_to_beat from live BTC if this many seconds or less have elapsed in the market.",
     )
     parser.add_argument(
+        "--allow-target-fallback",
+        action="store_true",
+        help="Allow inferring price_to_beat from live BTC near market start. Disabled by default because stale feeds can invert the signal.",
+    )
+    parser.add_argument(
         "--orderbook-depth-interval",
         type=float,
         default=2.5,
@@ -258,6 +266,12 @@ def parse_args():
         choices=["skip", "allow"],
         default="skip",
         help="What to do when liquidity-aware execution is on but a row has no depth data.",
+    )
+    parser.add_argument(
+        "--min-order-usd",
+        type=float,
+        default=0.0,
+        help="Minimum notional for simulated/live-paper orders. Use 1.0 to mirror Polymarket's minimum order size.",
     )
     return parser.parse_args()
 
@@ -400,6 +414,26 @@ def parse_numeric(value):
     return None
 
 
+def assert_geoblock_allows_trading():
+    try:
+        response = requests.get(GEOBLOCK_API, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        raise SystemExit(
+            f"Could not verify Polymarket geoblock status: {type(exc).__name__}: {exc}. "
+            "Real trading is disabled until this check succeeds."
+        ) from exc
+
+    if payload.get("blocked"):
+        country = payload.get("country", "")
+        region = payload.get("region", "")
+        raise SystemExit(
+            f"Polymarket geoblock reports this location is blocked for order placement "
+            f"(country={country}, region={region}). Real trading is disabled."
+        )
+
+
 class RealOrderExecutor:
     def __init__(self, *, order_type: str, max_order_usd: float, min_seconds_left: float):
         try:
@@ -475,7 +509,7 @@ class RealOrderExecutor:
         token_id = market["up_token"] if event.side == "up" else market["down_token"]
         amount = float(event.usd_amount if event.action == "buy" else event.tokens)
         amount_type = "usdc" if event.action == "buy" else "shares"
-        if event.action == "buy" and amount > self.max_order_usd:
+        if event.action == "buy" and self.max_order_usd > 0 and amount > self.max_order_usd:
             return {
                 "token_id": token_id,
                 "amount": amount,
@@ -615,6 +649,25 @@ def get_market(slot=None):
     return None
 
 
+def fetch_price_to_beat_for_market(market):
+    if not market:
+        return None
+    slug = market.get("slug")
+    if not slug:
+        return None
+    try:
+        resp = requests.get(f"{GAMMA_API}/events?slug={slug}", timeout=5)
+        data = resp.json()
+    except Exception:
+        return None
+    if not data:
+        return None
+    ev = data[0]
+    markets = ev.get("markets") or []
+    m = markets[0] if markets else {}
+    return extract_price_to_beat({"event": ev, "market": m})
+
+
 @dataclass
 class StrategyRuntime:
     config_path: Path
@@ -690,6 +743,7 @@ class LiveStrategySuite:
         self.real_market_buy_usd = 0.0
         self.real_run_buy_usd = 0.0
         if args.execution_mode == "real":
+            assert_geoblock_allows_trading()
             self.real_executor = RealOrderExecutor(
                 order_type=args.real_order_type,
                 max_order_usd=args.real_max_order_usd,
@@ -725,8 +779,16 @@ class LiveStrategySuite:
         paths = sorted(self.strategy_folder.glob(self.args.strategy_pattern))
         if not paths:
             raise FileNotFoundError(f"No strategy files matched {self.args.strategy_pattern!r} in {self.strategy_folder}")
+        initial_reserved_balance = 0.0
+        if self.compound_balance:
+            initial_reserved_balance = float(self.balance_cfg.get("initial_reserved_balance", 0.0) or 0.0)
         return [
-            StrategyRuntime(path, load_yaml(path), self.base_starting_balance)
+            StrategyRuntime(
+                path,
+                load_yaml(path),
+                self.base_starting_balance,
+                reserved_balance=initial_reserved_balance,
+            )
             for path in paths
         ]
 
@@ -814,6 +876,10 @@ class LiveStrategySuite:
                 f"-{max(runtime.master_balance_before_market for runtime in self.strategies):.2f}"
             )
             print(f"Effective market balance range: {min(active):.2f}-{max(active):.2f}")
+            print(
+                f"Reserved balance range: {min(runtime.reserved_balance for runtime in self.strategies):.2f}"
+                f"-{max(runtime.reserved_balance for runtime in self.strategies):.2f}"
+            )
         else:
             print(f"Paper balance per strategy: {self.args.starting_balance:.2f}")
         if market.get("price_to_beat") is not None:
@@ -1092,6 +1158,10 @@ class LiveStrategySuite:
             else:
                 decision = runtime.strategy.decide(state)
             usd_amount = decision.usd_amount if decision.usd_amount is not None else float(runtime.config.get("order_usd", 1.0))
+            sizing_floor_applied = False
+            if decision.action in {"buy_up", "buy_down"} and self.args.min_order_usd > 0 and usd_amount < self.args.min_order_usd:
+                usd_amount = self.args.min_order_usd
+                sizing_floor_applied = True
             liquidity = {
                 "requested_usd_amount": usd_amount,
                 "executable_usd_amount": usd_amount,
@@ -1136,6 +1206,7 @@ class LiveStrategySuite:
                 usd_amount=execution_usd_amount,
                 max_buy_usd=max_buy_usd,
                 max_sell_tokens=max_sell_tokens,
+                min_order_usd=self.args.min_order_usd,
                 reason=decision.reason,
             )
             for event in events:
@@ -1198,6 +1269,8 @@ class LiveStrategySuite:
                 "reason": decision.reason,
                 "usd_amount": usd_amount,
                 "executed_usd_amount": execution_usd_amount,
+                "min_order_usd": self.args.min_order_usd,
+                "min_order_sizing_floor_applied": sizing_floor_applied,
                 "execution_up_price": execution_up_price,
                 "execution_down_price": execution_down_price,
                 "liquidity_aware_execution": self.args.liquidity_aware_execution,
@@ -1266,6 +1339,9 @@ class LiveStrategySuite:
                 "btc_price": btc_price,
                 "price_to_beat": self.state["price_to_beat"],
                 "price_to_beat_source": self.state["price_to_beat_source"],
+                "target_fallback_enabled": self.args.allow_target_fallback,
+                "target_fallback_window": self.args.max_target_fallback_elapsed,
+                "target_fallback_warning_logged": self.state["target_fallback_warning_logged"],
                 "latest_actions": list(self.latest_non_hold_actions),
             }
         payload["strategy_count"] = len(self.strategies)
@@ -1279,6 +1355,15 @@ class LiveStrategySuite:
         if btc_price is not None and payload["price_to_beat"] is not None:
             distance = btc_price - payload["price_to_beat"]
         payload["distance"] = distance
+        if payload["price_to_beat"] is not None:
+            payload["target_status"] = f"set from {payload['price_to_beat_source'] or 'unknown'}"
+        elif payload["target_fallback_enabled"]:
+            payload["target_status"] = (
+                f"waiting for Gamma or first {payload['target_fallback_window']:.1f}s "
+                "Chainlink/Binance fallback"
+            )
+        else:
+            payload["target_status"] = "waiting for Gamma; live BTC fallback disabled"
         return payload
 
     def current_leaderboard(self, up_price, down_price):
@@ -1333,6 +1418,7 @@ class LiveStrategySuite:
 def poll_clob_loop(suite: LiveStrategySuite):
     current_market = None
     last_orderbook_depth_at = 0.0
+    last_target_refresh_at = 0.0
     while suite.running:
         now = time.time()
         if current_market is None or now >= current_market["end_time"]:
@@ -1355,6 +1441,7 @@ def poll_clob_loop(suite: LiveStrategySuite):
                 continue
             suite.begin_market(current_market)
             last_orderbook_depth_at = 0.0
+            last_target_refresh_at = 0.0
             wait = current_market["start_time"] - time.time()
             if wait > 0:
                 time.sleep(wait)
@@ -1388,7 +1475,24 @@ def poll_clob_loop(suite: LiveStrategySuite):
             suite.state["up_price"].append((now_t, up_price))
             suite.state["down_price"].append((now_t, down_price))
             elapsed = now_t - suite.state["market_start"] if suite.state["market_start"] else None
-            fallback_allowed = elapsed is not None and elapsed <= suite.args.max_target_fallback_elapsed
+            target_missing = suite.state["price_to_beat"] is None
+        if target_missing and now_t - last_target_refresh_at >= 2.0:
+            refreshed_price_to_beat = fetch_price_to_beat_for_market(current_market)
+            last_target_refresh_at = now_t
+            if refreshed_price_to_beat is not None:
+                with suite.lock:
+                    if suite.state["price_to_beat"] is None:
+                        suite.state["price_to_beat"] = refreshed_price_to_beat
+                        suite.state["price_to_beat_source"] = "gamma_refresh"
+                        print(f"Price to beat refreshed from Gamma: {refreshed_price_to_beat:.2f}")
+
+        with suite.lock:
+            elapsed = now_t - suite.state["market_start"] if suite.state["market_start"] else None
+            fallback_allowed = (
+                suite.args.allow_target_fallback
+                and elapsed is not None
+                and elapsed <= suite.args.max_target_fallback_elapsed
+            )
             if suite.state["price_to_beat"] is None and fallback_allowed and suite.state["btc_chainlink"]:
                 suite.state["price_to_beat"] = suite.state["btc_chainlink"][-1][1]
                 suite.state["price_to_beat_source"] = "chainlink_start_fallback"
@@ -1407,7 +1511,7 @@ def poll_clob_loop(suite: LiveStrategySuite):
                 print(
                     f"Skipping strategy decisions for {suite.state['current_slug']}: "
                     f"missing price_to_beat after elapsed={elapsed:.3f}s. "
-                    "Waiting for next full market."
+                    "Waiting for Gamma target or next full market."
                 )
 
         row = suite.latest_snapshot()
@@ -1817,7 +1921,9 @@ DASHBOARD_HTML = """
     <div class="cell"><div class="label">Prices</div><div class="value" id="prices">--</div></div>
     <div class="cell"><div class="label">BTC</div><div class="value" id="btc">--</div></div>
     <div class="cell"><div class="label">Price To Beat</div><div class="value" id="ptb">--</div></div>
+    <div class="cell"><div class="label">Target Source</div><div class="value" id="ptbsrc">--</div></div>
     <div class="cell"><div class="label">BTC Distance</div><div class="value" id="dist">--</div></div>
+    <div class="cell wide"><div class="label">Target Status</div><div class="value" id="targetstatus">--</div></div>
     <div class="cell wide"><div class="label">Current Slug</div><div class="value" id="slug">--</div></div>
   </div>
   <div class="tables">
@@ -1979,7 +2085,9 @@ socket.on('tick', d => {
   document.getElementById('left').textContent = d.seconds_left == null ? '--' : Number(d.seconds_left).toFixed(1) + 's';
   document.getElementById('prices').innerHTML = '<span class="green">' + fmtNum(d.up_price) + '</span> / <span class="red">' + fmtNum(d.down_price) + '</span>';
   document.getElementById('btc').textContent = fmtMoney(d.btc_price);
-  document.getElementById('ptb').textContent = fmtMoney(d.price_to_beat) + (d.price_to_beat_source ? ' ' + d.price_to_beat_source : '');
+  document.getElementById('ptb').textContent = fmtMoney(d.price_to_beat);
+  document.getElementById('ptbsrc').textContent = d.price_to_beat_source || '--';
+  document.getElementById('targetstatus').textContent = d.target_status || '--';
   document.getElementById('dist').textContent = d.distance == null ? '--' : fmtMoney(d.distance);
   document.getElementById('slug').textContent = d.current_slug || '--';
   document.getElementById('leaderboard').innerHTML = (d.leaderboard || []).slice(0, 25).map(r =>
@@ -2040,11 +2148,17 @@ def main():
         print(f"Start balance:   {suite.base_starting_balance:.2f} master balance per strategy")
     else:
         print(f"Start balance:   {args.starting_balance:.2f} per strategy per market")
-    print(f"Target fallback: first {args.max_target_fallback_elapsed:.1f}s only")
+    if args.allow_target_fallback:
+        print(f"Target fallback: enabled for first {args.max_target_fallback_elapsed:.1f}s")
+    else:
+        print("Target fallback: disabled; waiting for Gamma price_to_beat")
     print(f"Execution mode:  {args.execution_mode}")
     if args.execution_mode == "real":
         print(f"Real order type: {args.real_order_type}")
-        print(f"Real buy cap:    {args.real_max_order_usd:.2f} USDC per order")
+        if args.real_max_order_usd > 0:
+            print(f"Real buy cap:    {args.real_max_order_usd:.2f} USDC per order")
+        else:
+            print("Real buy cap:    disabled; strategy sizes orders")
         print(f"Real order log:  {suite.real_order_path}")
     print(f"Dashboard:       http://localhost:{args.port}")
     print(f"Summary page:    http://localhost:{args.port}/summary")

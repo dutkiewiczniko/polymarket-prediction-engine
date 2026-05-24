@@ -108,6 +108,7 @@ def run_simulation(
     liquidity_depth_window_cents: int = 2,
     liquidity_fill_fraction: float = 0.25,
     liquidity_missing_depth_policy: str = "skip",
+    min_order_usd: float = 0.0,
 ) -> SimulationResult:
     market_csv = Path(market_csv)
     output_csv = Path(output_csv) if output_csv is not None else None
@@ -147,6 +148,10 @@ def run_simulation(
         else:
             decision = strategy.decide(state)
         decision_usd_amount = decision.usd_amount if decision.usd_amount is not None else order_usd
+        sizing_floor_applied = False
+        if decision.action in {"buy_up", "buy_down"} and min_order_usd > 0 and decision_usd_amount < min_order_usd:
+            decision_usd_amount = min_order_usd
+            sizing_floor_applied = True
         liquidity = {
             "requested_usd_amount": decision_usd_amount,
             "executable_usd_amount": decision_usd_amount,
@@ -190,6 +195,7 @@ def run_simulation(
             usd_amount=execution_usd_amount,
             max_buy_usd=max_buy_usd,
             max_sell_tokens=max_sell_tokens,
+            min_order_usd=min_order_usd,
             reason=decision.reason,
         )
 
@@ -217,6 +223,8 @@ def run_simulation(
             "reason": decision.reason,
             "usd_amount": decision_usd_amount,
             "executed_usd_amount": execution_usd_amount,
+            "min_order_usd": min_order_usd,
+            "min_order_sizing_floor_applied": sizing_floor_applied,
             "execution_up_price": execution_up_price,
             "execution_down_price": execution_down_price,
             "liquidity_aware_execution": liquidity_aware_execution,
