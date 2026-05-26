@@ -11,6 +11,8 @@ market_data/
 training_data/
 simready*/
 simulator_ready_markets/
+simulator_ready_markets*/
+simulator_ready_markets*.csv
 models/
 /analysis/
 /market_data/

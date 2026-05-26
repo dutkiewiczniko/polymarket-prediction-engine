@@ -2,7 +2,14 @@ from pathlib import Path
 import copy
 import yaml
 
-from simulator.strategies import HoldStrategy, RandomStrategy, MomentumStrategy, RuleBasedStrategy, BaseStrategy
+from simulator.strategies import (
+    BaseStrategy,
+    HoldStrategy,
+    MomentumStrategy,
+    RandomStrategy,
+    RuleBasedStrategy,
+    VotingEnsembleStrategy,
+)
 
 
 def build_strategy_from_config(cfg: dict) -> BaseStrategy:
@@ -43,6 +50,32 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
         strategy = RuleBasedStrategy(
             rules=params.get("rules", []),
             default_usd_amount=float(params.get("default_usd_amount", cfg.get("order_usd", 1.0))),
+            max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
+            cooldown_ticks=int(params.get("cooldown_ticks", 0)),
+        )
+        strategy.name = cfg.get("name", strategy.name)
+        return strategy
+
+    if strategy_type == "voting_ensemble":
+        params = cfg.get("params", {})
+        members = []
+        member_names = []
+        for member in params.get("members", []):
+            member_cfg = load_yaml(member["config"])
+            member_strategy = build_strategy_from_config(member_cfg)
+            member_name = member.get("label") or member_cfg.get("name") or Path(member["config"]).stem
+            member_strategy.name = member_name
+            members.append(member_strategy)
+            member_names.append(member_name)
+        if not members:
+            raise ValueError("voting_ensemble requires at least one params.members entry")
+        strategy = VotingEnsembleStrategy(
+            members=members,
+            member_names=member_names,
+            min_votes=int(params.get("min_votes", 2)),
+            priority_members=list(params.get("priority_members", [])),
+            priority_scale=float(params.get("priority_scale", 0.75)),
+            default_scale=float(params.get("default_scale", 0.75)),
             max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
             cooldown_ticks=int(params.get("cooldown_ticks", 0)),
         )

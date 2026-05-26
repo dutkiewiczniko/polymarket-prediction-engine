@@ -100,3 +100,46 @@ def liquidity_limits_for_action(
         "reason": "; ".join(notes) if notes else "full requested size available",
     })
     return result
+
+
+def liquidity_execution_prices(
+    *,
+    action: str,
+    row_metrics: dict,
+    fallback_up_price: float,
+    fallback_down_price: float,
+) -> tuple[float, float]:
+    """Return action-aware execution prices from logged bid/ask data.
+
+    Strategy decisions still see the normal market price columns, but execution
+    should cross the spread when liquidity-aware simulation is enabled:
+    buys pay best ask, sells receive best bid.
+    """
+
+    action = str(action or "hold").lower().strip()
+    up_price = float(fallback_up_price)
+    down_price = float(fallback_down_price)
+
+    up_bid = parse_float(row_metrics.get("up_best_bid"))
+    up_ask = parse_float(row_metrics.get("up_best_ask"))
+    down_bid = parse_float(row_metrics.get("down_best_bid"))
+    down_ask = parse_float(row_metrics.get("down_best_ask"))
+
+    if action == "buy_up":
+        if up_ask is not None:
+            up_price = up_ask
+        if down_bid is not None:
+            down_price = down_bid
+    elif action == "buy_down":
+        if up_bid is not None:
+            up_price = up_bid
+        if down_ask is not None:
+            down_price = down_ask
+    elif action == "sell_up":
+        if up_bid is not None:
+            up_price = up_bid
+    elif action == "sell_down":
+        if down_bid is not None:
+            down_price = down_bid
+
+    return up_price, down_price

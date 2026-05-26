@@ -1,0 +1,63 @@
+batch_id: canary_liquidity_25pct_start50
+
+markets_folder: simulator_ready_markets_canary_liquidity
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+write_trajectories: false
+
+starting_balance: 50
+order_usd: 1
+compound_balance: true
+effective_market_balance_cap:
+
+effective_market_balance_bands:
+  - [1, 10, 1]
+  - [10, null, 1.5]
+
+effective_market_balance_default: 0
+
+liquidity_aware_execution: true
+liquidity_depth_window_cents: 1
+liquidity_fill_fraction: 0.25
+liquidity_missing_depth_policy: skip
+
+final_outcome:
+
+strategies:
+  - config: configs/strategies/family_fixed100/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: family_cheap_lottery_only
+  - config: configs/strategies/family_fixed100/down_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_down_bias_chaser
+  - config: configs/strategies/family_fixed100/down_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_down_bias_fader
+  - config: configs/strategies/family_fixed100/hybrid_price_signal_tp095_cheap0025.yaml
+    count: 1
+    label: family_hybrid_price_signal
+  - config: configs/strategies/family_fixed100/neutral_chaser_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: family_neutral_chaser
+  - config: configs/strategies/family_fixed100/neutral_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_neutral_fader
+  - config: configs/strategies/family_fixed100/up_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_up_bias_chaser
+  - config: configs/strategies/family_fixed100/up_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_up_bias_fader
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step05_d10_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step05_d10_cheap_5to1_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step05_d15_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step05_d15_cheap_5to1_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step10_d10_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step10_d10_cheap_5to1_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step10_d15_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step10_d15_cheap_5to1_band_scaled

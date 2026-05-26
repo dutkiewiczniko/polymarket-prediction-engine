@@ -1,0 +1,69 @@
+batch_id: live_family_plus_token_decrease_start60_eff30_min1_liquidity
+
+markets_folder: runs/live_strategy_suite/live_family_plus_token_decrease_band_scaled_start50_liquidity_v4/market_data
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+max_markets:
+write_trajectories: true
+
+starting_balance: 60
+order_usd: 1
+compound_balance: true
+effective_market_balance_cap:
+
+effective_market_balance_bands:
+  - [1, null, 30]
+
+effective_market_balance_default: 0
+
+min_order_usd: 1.0
+liquidity_aware_execution: true
+liquidity_depth_window_cents: 2
+liquidity_fill_fraction: 1.0
+liquidity_missing_depth_policy: skip
+
+final_outcome:
+
+strategies:
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/voting_any2_priority_up_chaser_down_fader.yaml
+    count: 1
+    label: family_voting_any2_priority_up_chaser_down_fader
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/cheap_lottery_chaser_fader_band_scaled.yaml
+    count: 1
+    label: family_cheap_lottery_chaser_fader_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: family_cheap_lottery_only
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/down_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_down_bias_chaser
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/down_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_down_bias_fader
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/hybrid_price_signal_tp095_cheap0025.yaml
+    count: 1
+    label: family_hybrid_price_signal
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/neutral_chaser_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: family_neutral_chaser
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/neutral_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_neutral_fader
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/up_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: family_up_bias_chaser
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/up_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: family_up_bias_fader
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step05_d10_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step05_d10_cheap_5to1_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step05_d15_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step05_d15_cheap_5to1_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step10_d10_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step10_d10_cheap_5to1_band_scaled
+  - config: configs/strategies/live_family_plus_token_decrease_band_scaled/token_decrease_step10_d15_cheap_5to1_band_scaled.yaml
+    count: 1
+    label: token_decrease_step10_d15_cheap_5to1_band_scaled

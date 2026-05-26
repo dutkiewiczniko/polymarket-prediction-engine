@@ -119,23 +119,32 @@ class RuleBasedStrategy(BaseStrategy):
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
         self._ticks_since_trade = cooldown_ticks
+        self._active_cooldown_ticks = cooldown_ticks
 
     def decide(self, state: DecisionState) -> StrategyDecision:
         metrics = self._build_metrics(state)
 
-        if self._ticks_since_trade < self.cooldown_ticks:
+        if self._ticks_since_trade < self._active_cooldown_ticks:
             self._ticks_since_trade += 1
             self._remember(metrics)
             return StrategyDecision("hold", "cooldown")
 
         for rule in self.rules:
             if self._rule_matches(rule, metrics):
+                self._active_cooldown_ticks = int(rule.get("cooldown_ticks", self.cooldown_ticks))
                 self._ticks_since_trade = 0
                 self._remember(metrics)
                 action = str(rule.get("action", "hold")).lower().strip()
                 if action in {"buy_up", "buy_down"} and self.max_orders is not None and state.orders_placed >= self.max_orders:
                     return StrategyDecision("hold", "max buy orders reached")
                 usd_amount = rule.get("usd_amount", self.default_usd_amount)
+                if action in {"buy_up", "buy_down"} and rule.get("token_amount") is not None:
+                    price_metric = "up_price" if action == "buy_up" else "down_price"
+                    price = as_float(metrics.get(price_metric))
+                    token_amount = as_float(rule.get("token_amount"))
+                    if price is None or token_amount is None:
+                        return StrategyDecision("hold", "cannot size token_amount order")
+                    usd_amount = token_amount * price
                 if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
                     price_metric = "up_price" if action == "buy_up" else "down_price"
                     price = as_float(metrics.get(price_metric))
@@ -215,6 +224,101 @@ class RuleBasedStrategy(BaseStrategy):
             return any(condition_matches(condition, metrics) for condition in rule["any"])
 
         return condition_matches(rule.get("when", rule), metrics)
+
+
+class VotingEnsembleStrategy(BaseStrategy):
+    name = "voting_ensemble"
+
+    def __init__(
+        self,
+        members: list[BaseStrategy],
+        member_names: list[str],
+        min_votes: int = 2,
+        priority_members: list[str] | None = None,
+        priority_scale: float = 0.75,
+        default_scale: float = 0.75,
+        max_orders: int | None = None,
+        cooldown_ticks: int = 0,
+    ):
+        self.members = members
+        self.member_names = member_names
+        self.min_votes = min_votes
+        self.priority_members = set(priority_members or [])
+        self.priority_scale = priority_scale
+        self.default_scale = default_scale
+        self.max_orders = max_orders
+        self.cooldown_ticks = cooldown_ticks
+        self._ticks_since_trade = cooldown_ticks
+
+    def decide(self, state: DecisionState) -> StrategyDecision:
+        member_decisions = [
+            (name, strategy.decide(state))
+            for name, strategy in zip(self.member_names, self.members)
+        ]
+
+        if self._ticks_since_trade < self.cooldown_ticks:
+            self._ticks_since_trade += 1
+            return StrategyDecision("hold", self._format_reason("cooldown", member_decisions))
+
+        if self.max_orders is not None and state.orders_placed >= self.max_orders:
+            return StrategyDecision("hold", self._format_reason("max buy orders reached", member_decisions))
+
+        buy_decisions = [
+            (name, decision)
+            for name, decision in member_decisions
+            if decision.action in {"buy_up", "buy_down"}
+        ]
+        up_votes = [(name, decision) for name, decision in buy_decisions if decision.action == "buy_up"]
+        down_votes = [(name, decision) for name, decision in buy_decisions if decision.action == "buy_down"]
+
+        chosen = self._choose_side(up_votes, down_votes)
+        if chosen is None:
+            return StrategyDecision("hold", self._format_reason("insufficient aligned votes", member_decisions))
+
+        action, votes = chosen
+        scale = self.priority_scale if any(name in self.priority_members for name, _ in votes) else self.default_scale
+        sized_votes = [
+            decision.usd_amount
+            for _, decision in votes
+            if decision.usd_amount is not None and decision.usd_amount > 0
+        ]
+        usd_amount = min(sized_votes) * scale if sized_votes else None
+        self._ticks_since_trade = 0
+        voters = ",".join(name for name, _ in votes)
+        return StrategyDecision(action, f"ensemble {action} votes={len(votes)} voters={voters}", usd_amount=usd_amount)
+
+    def _choose_side(
+        self,
+        up_votes: list[tuple[str, StrategyDecision]],
+        down_votes: list[tuple[str, StrategyDecision]],
+    ) -> tuple[str, list[tuple[str, StrategyDecision]]] | None:
+        valid = []
+        if len(up_votes) >= self.min_votes:
+            valid.append(("buy_up", up_votes))
+        if len(down_votes) >= self.min_votes:
+            valid.append(("buy_down", down_votes))
+        if not valid:
+            return None
+
+        priority_valid = [
+            item for item in valid
+            if any(name in self.priority_members for name, _ in item[1])
+        ]
+        candidates = priority_valid or valid
+        candidates.sort(key=lambda item: (len(item[1]), self._priority_count(item[1])), reverse=True)
+        return candidates[0]
+
+    def _priority_count(self, votes: list[tuple[str, StrategyDecision]]) -> int:
+        return sum(1 for name, _ in votes if name in self.priority_members)
+
+    def _format_reason(self, prefix: str, member_decisions: list[tuple[str, StrategyDecision]]) -> str:
+        active = [
+            f"{name}:{decision.action}"
+            for name, decision in member_decisions
+            if decision.action != "hold"
+        ]
+        suffix = "; ".join(active[:6]) if active else "no active member signals"
+        return f"{prefix}; {suffix}"
 
 
 def condition_matches(condition: dict[str, Any], metrics: dict[str, float | bool | None]) -> bool:

@@ -1,6 +1,9 @@
 import argparse
 import asyncio
 import csv
+import fnmatch
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -10,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
 import aiohttp
 import requests
@@ -33,7 +37,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from simulator.config_loader import build_strategy_from_config, load_yaml
 from simulator.execution import execute_action
-from simulator.liquidity import liquidity_limits_for_action
+from simulator.liquidity import liquidity_execution_prices, liquidity_limits_for_action
 from simulator.batch import resolve_effective_market_balance
 from simulator.models import DecisionState, MarketTick
 from simulator.portfolio import Portfolio
@@ -42,6 +46,7 @@ from simulator.strategies import StrategyDecision
 
 GAMMA_API = "https://gamma-api.polymarket.com"
 CLOB_API = "https://clob.polymarket.com"
+GEOBLOCK_API = "https://polymarket.com/api/geoblock"
 RTDS_URL = "wss://ws-live-data.polymarket.com"
 BINANCE_WS = "wss://stream.binance.com:9443/ws/btcusdt@ticker"
 
@@ -100,6 +105,10 @@ TRAJECTORY_COLUMNS = [
     "reason",
     "usd_amount",
     "executed_usd_amount",
+    "min_order_usd",
+    "min_order_sizing_floor_applied",
+    "execution_up_price",
+    "execution_down_price",
     "liquidity_aware_execution",
     "liquidity_depth_window_cents",
     "liquidity_fill_fraction",
@@ -181,7 +190,7 @@ def parse_args():
         help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances.",
     )
     parser.add_argument("--run-id", default="", help="Optional run folder name under runs/live_strategy_suite.")
-    parser.add_argument("--port", type=int, default=5052, help="Local dashboard port.")
+    parser.add_argument("--port", type=int, default=5062, help="Local dashboard port.")
     parser.add_argument("--max-markets", type=int, default=0, help="Stop after this many completed markets. 0 means run forever.")
     parser.add_argument(
         "--execution-mode",
@@ -203,14 +212,31 @@ def parse_args():
     parser.add_argument(
         "--real-max-order-usd",
         type=float,
-        default=5.0,
-        help="Hard cap for each real BUY order in USDC.",
+        default=0.0,
+        help="Optional hard cap for each real BUY order in USDC. 0 disables and lets the strategy size orders.",
     )
     parser.add_argument(
         "--real-min-seconds-left",
         type=float,
         default=2.0,
         help="Skip real orders this close to market end.",
+    )
+    parser.add_argument(
+        "--real-strategy-pattern",
+        default="",
+        help="Only submit real orders for strategy names matching this fnmatch pattern. Empty means all strategies.",
+    )
+    parser.add_argument(
+        "--real-max-market-buy-usd",
+        type=float,
+        default=0.0,
+        help="Optional hard cap on total real BUY notional per market across submitted strategies. 0 disables.",
+    )
+    parser.add_argument(
+        "--real-max-run-buy-usd",
+        type=float,
+        default=0.0,
+        help="Optional hard cap on total real BUY notional for this process. 0 disables.",
     )
     parser.add_argument(
         "--trajectory-log-mode",
@@ -225,6 +251,37 @@ def parse_args():
         help="Only infer price_to_beat from live BTC if this many seconds or less have elapsed in the market.",
     )
     parser.add_argument(
+        "--allow-target-fallback",
+        action="store_true",
+        help="Allow inferring price_to_beat from Chainlink near market start. Disabled by default because stale feeds can invert the signal.",
+    )
+    parser.add_argument(
+        "--allow-binance-target-fallback",
+        action="store_true",
+        help="Allow inferring price_to_beat from Binance near market start. Risky: Polymarket's reference feed can differ from Binance.",
+    )
+    parser.add_argument(
+        "--chainlink-data-streams-target",
+        action="store_true",
+        help="Fetch price_to_beat directly from Chainlink Data Streams REST API before using live-feed fallbacks.",
+    )
+    parser.add_argument(
+        "--chainlink-data-streams-feed-id",
+        default=os.getenv("CHAINLINK_DATASTREAMS_BTC_USD_FEED_ID", ""),
+        help="BTC/USD Chainlink Data Streams feed ID. Defaults to CHAINLINK_DATASTREAMS_BTC_USD_FEED_ID.",
+    )
+    parser.add_argument(
+        "--chainlink-data-streams-api-url",
+        default=os.getenv("CHAINLINK_DATASTREAMS_API_URL", "https://api.dataengine.chain.link"),
+        help="Chainlink Data Streams REST base URL.",
+    )
+    parser.add_argument(
+        "--chainlink-data-streams-timeout",
+        type=float,
+        default=3.0,
+        help="Timeout in seconds for Chainlink Data Streams REST requests.",
+    )
+    parser.add_argument(
         "--orderbook-depth-interval",
         type=float,
         default=2.5,
@@ -232,12 +289,18 @@ def parse_args():
     )
     parser.add_argument("--liquidity-aware-execution", action="store_true", help="Cap paper fills using logged orderbook depth.")
     parser.add_argument("--liquidity-depth-window-cents", type=int, default=2, help="Use visible depth within this many cents.")
-    parser.add_argument("--liquidity-fill-fraction", type=float, default=1.0, help="Fraction of visible depth considered fillable.")
+    parser.add_argument("--liquidity-fill-fraction", type=float, default=0.25, help="Fraction of visible depth considered fillable.")
     parser.add_argument(
         "--liquidity-missing-depth-policy",
         choices=["skip", "allow"],
         default="skip",
         help="What to do when liquidity-aware execution is on but a row has no depth data.",
+    )
+    parser.add_argument(
+        "--min-order-usd",
+        type=float,
+        default=0.0,
+        help="Minimum notional for simulated/live-paper orders. Use 1.0 to mirror Polymarket's minimum order size.",
     )
     return parser.parse_args()
 
@@ -380,6 +443,139 @@ def parse_numeric(value):
     return None
 
 
+def chainlink_data_streams_credentials():
+    api_key = os.getenv("CHAINLINK_DATASTREAMS_API_KEY")
+    api_secret = os.getenv("CHAINLINK_DATASTREAMS_API_SECRET")
+    if not api_key or not api_secret:
+        return None, None
+    return api_key.strip(), api_secret.strip()
+
+
+def chainlink_data_streams_headers(*, api_key: str, api_secret: str, method: str, full_path: str) -> dict:
+    timestamp_ms = str(int(time.time() * 1000))
+    body_hash = hashlib.sha256(b"").hexdigest()
+    string_to_sign = f"{method.upper()} {full_path} {body_hash} {api_key} {timestamp_ms}"
+    signature = hmac.new(api_secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    return {
+        "Authorization": api_key,
+        "X-Authorization-Timestamp": timestamp_ms,
+        "X-Authorization-Signature-SHA256": signature,
+    }
+
+
+def _hex_to_bytes(value: str) -> bytes:
+    value = str(value or "").strip()
+    if value.startswith("0x"):
+        value = value[2:]
+    return bytes.fromhex(value)
+
+
+def _uint256(word: bytes) -> int:
+    if len(word) != 32:
+        raise ValueError("expected 32-byte ABI word")
+    return int.from_bytes(word, "big", signed=False)
+
+
+def _int256(word: bytes) -> int:
+    if len(word) != 32:
+        raise ValueError("expected 32-byte ABI word")
+    return int.from_bytes(word, "big", signed=True)
+
+
+def extract_chainlink_report_blob(full_report: str) -> bytes:
+    """Extract the dynamic report bytes from Chainlink's fullReport ABI payload."""
+    data = _hex_to_bytes(full_report)
+    if len(data) < 32 * 5 or len(data) % 32 != 0:
+        raise ValueError("invalid fullReport ABI payload")
+
+    # fullReport is ABI-encoded as reportContext[3], report, rs, ss, rawVs.
+    # The first dynamic offset after the three reportContext words points at report.
+    report_offset = _uint256(data[32 * 3:32 * 4])
+    if report_offset + 32 > len(data):
+        raise ValueError("report offset outside fullReport payload")
+    report_length = _uint256(data[report_offset:report_offset + 32])
+    report_start = report_offset + 32
+    report_end = report_start + report_length
+    if report_end > len(data):
+        raise ValueError("report bytes outside fullReport payload")
+    return data[report_start:report_end]
+
+
+def decode_chainlink_crypto_v3_benchmark_price(full_report: str) -> tuple[float, dict]:
+    report = extract_chainlink_report_blob(full_report)
+    if len(report) < 32 * 9:
+        raise ValueError("v3 crypto report is shorter than expected")
+    words = [report[i:i + 32] for i in range(0, 32 * 9, 32)]
+    metadata = {
+        "feed_id": "0x" + words[0].hex(),
+        "observations_timestamp": _uint256(words[1]),
+        "valid_from_timestamp": _uint256(words[2]),
+        "native_fee": _uint256(words[3]),
+        "link_fee": _uint256(words[4]),
+        "expires_at": _uint256(words[5]),
+        "benchmark_price_raw": _int256(words[6]),
+        "bid_raw": _int256(words[7]),
+        "ask_raw": _int256(words[8]),
+    }
+    return metadata["benchmark_price_raw"] / 1e18, metadata
+
+
+def fetch_chainlink_data_streams_price_at(*, feed_id: str, timestamp_s: int, api_url: str, timeout: float) -> tuple[float | None, dict]:
+    api_key, api_secret = chainlink_data_streams_credentials()
+    if not api_key or not api_secret:
+        return None, {"error": "missing Chainlink Data Streams API credentials"}
+    if not feed_id:
+        return None, {"error": "missing Chainlink Data Streams feed ID"}
+
+    params = {"feedID": feed_id, "timestamp": str(int(timestamp_s))}
+    full_path = f"/api/v1/reports?{urlencode(params)}"
+    headers = chainlink_data_streams_headers(
+        api_key=api_key,
+        api_secret=api_secret,
+        method="GET",
+        full_path=full_path,
+    )
+    url = f"{api_url.rstrip('/')}{full_path}"
+    resp = requests.get(url, headers=headers, timeout=timeout)
+    if resp.status_code >= 400:
+        return None, {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+    payload = resp.json()
+    report_payload = payload.get("report") if isinstance(payload, dict) else None
+    if not isinstance(report_payload, dict):
+        return None, {"error": "missing report payload"}
+    full_report = report_payload.get("fullReport")
+    if not full_report:
+        return None, {"error": "missing fullReport"}
+
+    price, decoded = decode_chainlink_crypto_v3_benchmark_price(full_report)
+    decoded.update({
+        "api_observations_timestamp": report_payload.get("observationsTimestamp"),
+        "api_valid_from_timestamp": report_payload.get("validFromTimestamp"),
+        "requested_timestamp": int(timestamp_s),
+    })
+    return price, decoded
+
+
+def assert_geoblock_allows_trading():
+    try:
+        response = requests.get(GEOBLOCK_API, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        raise SystemExit(
+            f"Could not verify Polymarket geoblock status: {type(exc).__name__}: {exc}. "
+            "Real trading is disabled until this check succeeds."
+        ) from exc
+
+    if payload.get("blocked"):
+        country = payload.get("country", "")
+        region = payload.get("region", "")
+        raise SystemExit(
+            f"Polymarket geoblock reports this location is blocked for order placement "
+            f"(country={country}, region={region}). Real trading is disabled."
+        )
+
+
 class RealOrderExecutor:
     def __init__(self, *, order_type: str, max_order_usd: float, min_seconds_left: float):
         try:
@@ -455,7 +651,7 @@ class RealOrderExecutor:
         token_id = market["up_token"] if event.side == "up" else market["down_token"]
         amount = float(event.usd_amount if event.action == "buy" else event.tokens)
         amount_type = "usdc" if event.action == "buy" else "shares"
-        if event.action == "buy" and amount > self.max_order_usd:
+        if event.action == "buy" and self.max_order_usd > 0 and amount > self.max_order_usd:
             return {
                 "token_id": token_id,
                 "amount": amount,
@@ -487,7 +683,34 @@ class RealOrderExecutor:
         }
 
 
-def extract_price_to_beat(payload):
+def extract_event_metadata_price_to_beat(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    candidates = []
+    event = payload.get("event")
+    market = payload.get("market")
+    if isinstance(event, dict):
+        candidates.append(event.get("eventMetadata"))
+    if isinstance(market, dict):
+        candidates.append(market.get("eventMetadata"))
+        candidates.append(market.get("metadata"))
+
+    for metadata in candidates:
+        if not isinstance(metadata, dict):
+            continue
+        for key in ("priceToBeat", "price_to_beat"):
+            numeric = parse_numeric(metadata.get(key))
+            if numeric and numeric > 1000:
+                return numeric
+    return None
+
+
+def extract_price_to_beat_with_source(payload):
+    metadata_price = extract_event_metadata_price_to_beat(payload)
+    if metadata_price is not None:
+        return metadata_price, "gamma_event_metadata"
+
     key_hints = {
         "priceToBeat",
         "price_to_beat",
@@ -521,15 +744,24 @@ def extract_price_to_beat(payload):
 
     found = walk(payload)
     if found is not None:
-        return found
+        return found, "gamma"
 
     for text in text_fields:
         matches = re.findall(r"\$?\b(\d{2,3}(?:,\d{3})+(?:\.\d+)?|\d{5,6}(?:\.\d+)?)\b", text)
         for match in matches:
             numeric = parse_numeric(match)
             if numeric and numeric > 1000:
-                return numeric
-    return None
+                return numeric, "gamma_text"
+    return None, ""
+
+
+def extract_price_to_beat(payload):
+    price, _ = extract_price_to_beat_with_source(payload)
+    return price
+
+
+def is_target_fallback_source(source: str | None) -> bool:
+    return str(source or "").endswith("_start_fallback")
 
 
 def extract_chainlink_btc_price(payload):
@@ -565,7 +797,8 @@ def get_market(slot=None):
     now = int(time.time())
     if slot is None:
         slot = now - (now % 300)
-    for offset in [0, 300, -300, 600]:
+    max_future_start_seconds = 90
+    for offset in [0, 300, -300]:
         s = slot + offset
         slug = f"btc-updown-5m-{s}"
         try:
@@ -579,8 +812,8 @@ def get_market(slot=None):
             tids = json.loads(m["clobTokenIds"]) if isinstance(m["clobTokenIds"], str) else m["clobTokenIds"]
             end = datetime.fromisoformat(m["endDate"].replace("Z", "+00:00")).timestamp()
             start = datetime.fromisoformat(ev["startTime"].replace("Z", "+00:00")).timestamp()
-            price_to_beat = extract_price_to_beat({"event": ev, "market": m})
-            if end > now:
+            price_to_beat, price_to_beat_source = extract_price_to_beat_with_source({"event": ev, "market": m})
+            if end > now and start <= now + max_future_start_seconds:
                 return {
                     "slug": slug,
                     "slot": s,
@@ -590,9 +823,33 @@ def get_market(slot=None):
                     "start_time": start,
                     "end_time": end,
                     "price_to_beat": price_to_beat,
-                    "price_to_beat_source": "gamma" if price_to_beat is not None else "",
+                    "price_to_beat_source": price_to_beat_source,
                 }
     return None
+
+
+def fetch_price_to_beat_for_market(market):
+    price, _ = fetch_price_to_beat_with_source_for_market(market)
+    return price
+
+
+def fetch_price_to_beat_with_source_for_market(market):
+    if not market:
+        return None, ""
+    slug = market.get("slug")
+    if not slug:
+        return None, ""
+    try:
+        resp = requests.get(f"{GAMMA_API}/events?slug={slug}", timeout=5)
+        data = resp.json()
+    except Exception:
+        return None, ""
+    if not data:
+        return None, ""
+    ev = data[0]
+    markets = ev.get("markets") or []
+    m = markets[0] if markets else {}
+    return extract_price_to_beat_with_source({"event": ev, "market": m})
 
 
 @dataclass
@@ -667,7 +924,10 @@ class LiveStrategySuite:
         self.ensure_summary_header()
         self.ensure_real_order_header()
         self.real_executor = None
+        self.real_market_buy_usd = 0.0
+        self.real_run_buy_usd = 0.0
         if args.execution_mode == "real":
+            assert_geoblock_allows_trading()
             self.real_executor = RealOrderExecutor(
                 order_type=args.real_order_type,
                 max_order_usd=args.real_max_order_usd,
@@ -691,6 +951,7 @@ class LiveStrategySuite:
             "orderbook_hashes": {},
         }
         self.current_market = None
+        self.market_path = None
         self.market_file = None
         self.market_writer = None
         self.latest_non_hold_actions = []
@@ -702,8 +963,16 @@ class LiveStrategySuite:
         paths = sorted(self.strategy_folder.glob(self.args.strategy_pattern))
         if not paths:
             raise FileNotFoundError(f"No strategy files matched {self.args.strategy_pattern!r} in {self.strategy_folder}")
+        initial_reserved_balance = 0.0
+        if self.compound_balance:
+            initial_reserved_balance = float(self.balance_cfg.get("initial_reserved_balance", 0.0) or 0.0)
         return [
-            StrategyRuntime(path, load_yaml(path), self.base_starting_balance)
+            StrategyRuntime(
+                path,
+                load_yaml(path),
+                self.base_starting_balance,
+                reserved_balance=initial_reserved_balance,
+            )
             for path in paths
         ]
 
@@ -755,6 +1024,8 @@ class LiveStrategySuite:
             runtime.reset_for_market(market_starting_balance)
 
         market_path = self.market_data_dir / f"{market['slug']}.csv"
+        self.market_path = market_path
+        self.real_market_buy_usd = 0.0
         self.market_file = market_path.open("w", newline="", encoding="utf-8")
         self.market_writer = csv.writer(self.market_file)
         self.market_writer.writerow(MARKET_CSV_HEADER)
@@ -789,6 +1060,10 @@ class LiveStrategySuite:
                 f"-{max(runtime.master_balance_before_market for runtime in self.strategies):.2f}"
             )
             print(f"Effective market balance range: {min(active):.2f}-{max(active):.2f}")
+            print(
+                f"Reserved balance range: {min(runtime.reserved_balance for runtime in self.strategies):.2f}"
+                f"-{max(runtime.reserved_balance for runtime in self.strategies):.2f}"
+            )
         else:
             print(f"Paper balance per strategy: {self.args.starting_balance:.2f}")
         if market.get("price_to_beat") is not None:
@@ -798,13 +1073,72 @@ class LiveStrategySuite:
         print(f"Run dir: {self.run_dir}")
         if self.args.execution_mode == "real":
             print(f"Real order log: {self.real_order_path}")
+            if self.args.real_strategy_pattern:
+                print(f"Real strategy pattern: {self.args.real_strategy_pattern}")
+            if self.args.real_max_market_buy_usd > 0:
+                print(f"Real market buy cap: {self.args.real_max_market_buy_usd:.2f}")
+            if self.args.real_max_run_buy_usd > 0:
+                print(f"Real run buy cap: {self.args.real_max_run_buy_usd:.2f}")
         print("=" * 80)
+
+    def submit_real_event(self, *, runtime: StrategyRuntime, event, market, seconds_left):
+        pattern = str(self.args.real_strategy_pattern or "").strip()
+        if pattern and not fnmatch.fnmatch(runtime.name, pattern):
+            return {
+                "token_id": "",
+                "amount": "",
+                "amount_type": "",
+                "status": "skipped",
+                "response": "",
+                "error": f"strategy {runtime.name!r} does not match real_strategy_pattern {pattern!r}",
+            }
+
+        if event.action == "buy":
+            amount = float(event.usd_amount)
+            market_cap = float(self.args.real_max_market_buy_usd or 0.0)
+            if market_cap > 0 and self.real_market_buy_usd + amount > market_cap:
+                return {
+                    "token_id": "",
+                    "amount": amount,
+                    "amount_type": "usdc",
+                    "status": "skipped",
+                    "response": "",
+                    "error": (
+                        f"real market buy cap exceeded: "
+                        f"{self.real_market_buy_usd + amount:.4f} > {market_cap:.4f}"
+                    ),
+                }
+            run_cap = float(self.args.real_max_run_buy_usd or 0.0)
+            if run_cap > 0 and self.real_run_buy_usd + amount > run_cap:
+                return {
+                    "token_id": "",
+                    "amount": amount,
+                    "amount_type": "usdc",
+                    "status": "skipped",
+                    "response": "",
+                    "error": (
+                        f"real run buy cap exceeded: "
+                        f"{self.real_run_buy_usd + amount:.4f} > {run_cap:.4f}"
+                    ),
+                }
+
+        result = self.real_executor.submit_event(
+            event=event,
+            market=market,
+            seconds_left=seconds_left,
+        )
+        if event.action == "buy" and result.get("status") == "submitted":
+            amount = float(event.usd_amount)
+            self.real_market_buy_usd += amount
+            self.real_run_buy_usd += amount
+        return result
 
     def end_market(self):
         if self.market_file:
             self.market_file.close()
             self.market_file = None
             self.market_writer = None
+            self.market_path = None
 
         if not self.current_market:
             return
@@ -955,10 +1289,23 @@ class LiveStrategySuite:
             self.state["orderbook_hashes"] = next_hashes
 
     def append_market_row(self, row):
-        if not self.market_writer or not self.market_file:
+        if not self.market_path:
             return
-        self.market_writer.writerow([format_csv_value(row.get(column)) for column in MARKET_CSV_HEADER])
-        self.market_file.flush()
+        if not self.market_writer or not self.market_file or self.market_file.closed:
+            self.market_file = self.market_path.open("a", newline="", encoding="utf-8")
+            self.market_writer = csv.writer(self.market_file)
+        try:
+            self.market_writer.writerow([format_csv_value(row.get(column)) for column in MARKET_CSV_HEADER])
+            self.market_file.flush()
+        except OSError as exc:
+            print(f"Market CSV write skipped for {self.market_path}: {type(exc).__name__}: {exc}")
+            try:
+                if self.market_file and not self.market_file.closed:
+                    self.market_file.close()
+            except OSError:
+                pass
+            self.market_file = None
+            self.market_writer = None
 
     def build_tick(self, row):
         return MarketTick(
@@ -995,6 +1342,10 @@ class LiveStrategySuite:
             else:
                 decision = runtime.strategy.decide(state)
             usd_amount = decision.usd_amount if decision.usd_amount is not None else float(runtime.config.get("order_usd", 1.0))
+            sizing_floor_applied = False
+            if decision.action in {"buy_up", "buy_down"} and self.args.min_order_usd > 0 and usd_amount < self.args.min_order_usd:
+                usd_amount = self.args.min_order_usd
+                sizing_floor_applied = True
             liquidity = {
                 "requested_usd_amount": usd_amount,
                 "executable_usd_amount": usd_amount,
@@ -1020,16 +1371,26 @@ class LiveStrategySuite:
                 execution_usd_amount = liquidity["executable_usd_amount"]
                 max_buy_usd = liquidity["max_buy_usd"]
                 max_sell_tokens = liquidity["max_sell_tokens"]
+                execution_up_price, execution_down_price = liquidity_execution_prices(
+                    action=decision.action,
+                    row_metrics=row,
+                    fallback_up_price=row["up_price"],
+                    fallback_down_price=row["down_price"],
+                )
+            else:
+                execution_up_price = row["up_price"]
+                execution_down_price = row["down_price"]
             spend_before = runtime.market_spend_used
             events = execute_action(
                 portfolio=runtime.portfolio,
                 action=decision.action,
                 timestamp=row["timestamp"],
-                up_price=row["up_price"],
-                down_price=row["down_price"],
+                up_price=execution_up_price,
+                down_price=execution_down_price,
                 usd_amount=execution_usd_amount,
                 max_buy_usd=max_buy_usd,
                 max_sell_tokens=max_sell_tokens,
+                min_order_usd=self.args.min_order_usd,
                 reason=decision.reason,
             )
             for event in events:
@@ -1038,7 +1399,8 @@ class LiveStrategySuite:
                     runtime.event_counts[key] += 1
                 if self.real_executor is not None:
                     try:
-                        result = self.real_executor.submit_event(
+                        result = self.submit_real_event(
+                            runtime=runtime,
                             event=event,
                             market=self.current_market,
                             seconds_left=tick.seconds_left,
@@ -1091,6 +1453,10 @@ class LiveStrategySuite:
                 "reason": decision.reason,
                 "usd_amount": usd_amount,
                 "executed_usd_amount": execution_usd_amount,
+                "min_order_usd": self.args.min_order_usd,
+                "min_order_sizing_floor_applied": sizing_floor_applied,
+                "execution_up_price": execution_up_price,
+                "execution_down_price": execution_down_price,
                 "liquidity_aware_execution": self.args.liquidity_aware_execution,
                 "liquidity_depth_window_cents": self.args.liquidity_depth_window_cents if self.args.liquidity_aware_execution else "",
                 "liquidity_fill_fraction": self.args.liquidity_fill_fraction if self.args.liquidity_aware_execution else "",
@@ -1157,6 +1523,10 @@ class LiveStrategySuite:
                 "btc_price": btc_price,
                 "price_to_beat": self.state["price_to_beat"],
                 "price_to_beat_source": self.state["price_to_beat_source"],
+                "target_fallback_enabled": self.args.allow_target_fallback,
+                "binance_target_fallback_enabled": self.args.allow_binance_target_fallback,
+                "target_fallback_window": self.args.max_target_fallback_elapsed,
+                "target_fallback_warning_logged": self.state["target_fallback_warning_logged"],
                 "latest_actions": list(self.latest_non_hold_actions),
             }
         payload["strategy_count"] = len(self.strategies)
@@ -1170,6 +1540,16 @@ class LiveStrategySuite:
         if btc_price is not None and payload["price_to_beat"] is not None:
             distance = btc_price - payload["price_to_beat"]
         payload["distance"] = distance
+        if payload["price_to_beat"] is not None:
+            payload["target_status"] = f"set from {payload['price_to_beat_source'] or 'unknown'}"
+        elif payload["target_fallback_enabled"]:
+            sources = "Chainlink/Binance" if payload["binance_target_fallback_enabled"] else "Chainlink"
+            payload["target_status"] = (
+                f"waiting for Gamma or first {payload['target_fallback_window']:.1f}s "
+                f"{sources} fallback"
+            )
+        else:
+            payload["target_status"] = "waiting for Gamma; live BTC fallback disabled"
         return payload
 
     def current_leaderboard(self, up_price, down_price):
@@ -1224,6 +1604,8 @@ class LiveStrategySuite:
 def poll_clob_loop(suite: LiveStrategySuite):
     current_market = None
     last_orderbook_depth_at = 0.0
+    last_target_refresh_at = 0.0
+    chainlink_data_streams_warning_logged = False
     while suite.running:
         now = time.time()
         if current_market is None or now >= current_market["end_time"]:
@@ -1246,6 +1628,8 @@ def poll_clob_loop(suite: LiveStrategySuite):
                 continue
             suite.begin_market(current_market)
             last_orderbook_depth_at = 0.0
+            last_target_refresh_at = 0.0
+            chainlink_data_streams_warning_logged = False
             wait = current_market["start_time"] - time.time()
             if wait > 0:
                 time.sleep(wait)
@@ -1253,6 +1637,15 @@ def poll_clob_loop(suite: LiveStrategySuite):
         remaining = current_market["end_time"] - time.time()
         if remaining <= 0:
             continue
+
+        now_t = time.time()
+        last_target_refresh_at, chainlink_data_streams_warning_logged = refresh_target_for_market(
+            suite,
+            current_market,
+            now_t,
+            last_target_refresh_at,
+            chainlink_data_streams_warning_logged,
+        )
 
         try:
             resp = requests.get(
@@ -1278,28 +1671,6 @@ def poll_clob_loop(suite: LiveStrategySuite):
         with suite.lock:
             suite.state["up_price"].append((now_t, up_price))
             suite.state["down_price"].append((now_t, down_price))
-            elapsed = now_t - suite.state["market_start"] if suite.state["market_start"] else None
-            fallback_allowed = elapsed is not None and elapsed <= suite.args.max_target_fallback_elapsed
-            if suite.state["price_to_beat"] is None and fallback_allowed and suite.state["btc_chainlink"]:
-                suite.state["price_to_beat"] = suite.state["btc_chainlink"][-1][1]
-                suite.state["price_to_beat_source"] = "chainlink_start_fallback"
-                print(f"Price to beat fallback set from Chainlink at elapsed={elapsed:.3f}s: {suite.state['price_to_beat']:.2f}")
-            if suite.state["price_to_beat"] is None and fallback_allowed and suite.state["btc_binance"]:
-                suite.state["price_to_beat"] = suite.state["btc_binance"][-1][1]
-                suite.state["price_to_beat_source"] = "binance_start_fallback"
-                print(f"Price to beat fallback set from Binance at elapsed={elapsed:.3f}s: {suite.state['price_to_beat']:.2f}")
-            if (
-                suite.state["price_to_beat"] is None
-                and elapsed is not None
-                and elapsed > suite.args.max_target_fallback_elapsed
-                and not suite.state["target_fallback_warning_logged"]
-            ):
-                suite.state["target_fallback_warning_logged"] = True
-                print(
-                    f"Skipping strategy decisions for {suite.state['current_slug']}: "
-                    f"missing price_to_beat after elapsed={elapsed:.3f}s. "
-                    "Waiting for next full market."
-                )
 
         row = suite.latest_snapshot()
         suite.append_market_row(row)
@@ -1545,6 +1916,10 @@ def render_static_summary(run_dir, summary_path, summary):
         for row in recent
     )
     reward_header = "".join(f"<th>{esc(name)}</th>" for name in strategy_order)
+    reward_header_sortable = "".join(
+        f"<th>{esc(name)}<span class=\"sort-indicator\"></span></th>"
+        for name in strategy_order
+    )
     reward_rows = "\n".join(
         "<tr>"
         f"<td>{row['market_index']}</td><td>{esc(row['market_slug'])}</td><td>{esc(row['final_outcome'])}</td>"
@@ -1574,6 +1949,9 @@ def render_static_summary(run_dir, summary_path, summary):
     table {{ width:100%; border-collapse:collapse; background:#121824; }}
     th, td {{ padding:9px 10px; border-bottom:1px solid #2a3345; text-align:left; font-size:13px; }}
     th {{ color:#8ec1ff; }}
+    table.sortable th {{ cursor:pointer; user-select:none; white-space:nowrap; }}
+    table.sortable th:hover {{ background:#1a2433; }}
+    .sort-indicator {{ color:#9aa5b7; font-size:10px; margin-left:5px; }}
     .pos {{ color:#6fd38b; }}
     .neg {{ color:#ff7d7d; }}
   </style>
@@ -1587,7 +1965,7 @@ def render_static_summary(run_dir, summary_path, summary):
   <main>
     <section>
       <h2>Performance Summary</h2>
-      <table><thead><tr><th>Strategy</th><th>Markets</th><th>Mean Reward</th><th>Total Reward</th><th>Win Rate</th><th>Orders</th></tr></thead><tbody>{leader_rows}</tbody></table>
+      <table class="sortable"><thead><tr><th>Strategy<span class="sort-indicator"></span></th><th>Markets<span class="sort-indicator"></span></th><th>Mean Reward<span class="sort-indicator"></span></th><th>Total Reward<span class="sort-indicator"></span></th><th>Win Rate<span class="sort-indicator"></span></th><th>Orders<span class="sort-indicator"></span></th></tr></thead><tbody>{leader_rows}</tbody></table>
     </section>
     <section>
       <h2>Balance Paths By Strategy</h2>
@@ -1596,13 +1974,50 @@ def render_static_summary(run_dir, summary_path, summary):
     </section>
     <section>
       <h2>Reward By Market</h2>
-      <div class="table-scroll"><table><thead><tr><th>#</th><th>Market</th><th>Outcome</th>{reward_header}</tr></thead><tbody>{reward_rows}</tbody></table></div>
+      <div class="table-scroll"><table class="sortable"><thead><tr><th>#<span class="sort-indicator"></span></th><th>Market<span class="sort-indicator"></span></th><th>Outcome<span class="sort-indicator"></span></th>{reward_header_sortable}</tr></thead><tbody>{reward_rows}</tbody></table></div>
     </section>
     <section>
       <h2>Recent Results</h2>
-      <table><thead><tr><th>Market</th><th>Strategy</th><th>Outcome</th><th>Reward</th><th>Orders</th></tr></thead><tbody>{recent_rows}</tbody></table>
+      <table class="sortable"><thead><tr><th>Market<span class="sort-indicator"></span></th><th>Strategy<span class="sort-indicator"></span></th><th>Outcome<span class="sort-indicator"></span></th><th>Reward<span class="sort-indicator"></span></th><th>Orders<span class="sort-indicator"></span></th></tr></thead><tbody>{recent_rows}</tbody></table>
     </section>
   </main>
+<script>
+function parseCellValue(text) {{
+  const value = (text || '').trim().replace(/,/g, '');
+  if (value.endsWith('%')) {{
+    const pct = Number(value.slice(0, -1));
+    if (!Number.isNaN(pct)) return pct;
+  }}
+  const num = Number(value);
+  return Number.isNaN(num) ? value.toLowerCase() : num;
+}}
+function compareValues(a, b) {{
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, {{ numeric: true, sensitivity: 'base' }});
+}}
+document.querySelectorAll('table.sortable').forEach(table => {{
+  table.querySelectorAll('th').forEach((header, columnIndex) => {{
+    header.addEventListener('click', () => {{
+      const current = table.dataset.sortColumn === String(columnIndex) ? table.dataset.sortDirection : '';
+      const direction = current === 'asc' ? 'desc' : 'asc';
+      table.dataset.sortColumn = String(columnIndex);
+      table.dataset.sortDirection = direction;
+      table.querySelectorAll('.sort-indicator').forEach(item => item.textContent = '');
+      const indicator = header.querySelector('.sort-indicator');
+      if (indicator) indicator.textContent = direction === 'asc' ? '▲' : '▼';
+      const tbody = table.tBodies[0];
+      const rows = Array.from(tbody.rows);
+      rows.sort((rowA, rowB) => {{
+        const a = parseCellValue(rowA.children[columnIndex]?.textContent || '');
+        const b = parseCellValue(rowB.children[columnIndex]?.textContent || '');
+        const result = compareValues(a, b);
+        return direction === 'asc' ? result : -result;
+      }});
+      rows.forEach(row => tbody.appendChild(row));
+    }});
+  }});
+}});
+</script>
 </body>
 </html>"""
 
@@ -1636,6 +2051,9 @@ DASHBOARD_HTML = """
     table { width:100%; border-collapse:collapse; background:#101722; }
     th, td { padding:8px 10px; border-bottom:1px solid #273246; font-size:12px; text-align:left; }
     th { color:#8ec1ff; }
+    table.sortable th { cursor:pointer; user-select:none; white-space:nowrap; }
+    table.sortable th:hover { background:#192233; }
+    .sort-indicator { color:#98a4b5; font-size:10px; margin-left:5px; }
     .green { color:#6fd38b; }
     .red { color:#ff7d7d; }
     .muted { color:#98a4b5; }
@@ -1661,27 +2079,29 @@ DASHBOARD_HTML = """
     <div class="cell"><div class="label">Prices</div><div class="value" id="prices">--</div></div>
     <div class="cell"><div class="label">BTC</div><div class="value" id="btc">--</div></div>
     <div class="cell"><div class="label">Price To Beat</div><div class="value" id="ptb">--</div></div>
+    <div class="cell"><div class="label">Target Source</div><div class="value" id="ptbsrc">--</div></div>
     <div class="cell"><div class="label">BTC Distance</div><div class="value" id="dist">--</div></div>
+    <div class="cell wide"><div class="label">Target Status</div><div class="value" id="targetstatus">--</div></div>
     <div class="cell wide"><div class="label">Current Slug</div><div class="value" id="slug">--</div></div>
   </div>
   <div class="tables">
     <div>
       <h3>Live Leaderboard</h3>
-      <table>
+      <table class="sortable" data-sort-key="liveLeaderboard">
         <thead><tr><th>Strategy</th><th>Reward</th><th>Market Bal</th><th>Master</th><th>Eff Start</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
         <tbody id="leaderboard"></tbody>
       </table>
     </div>
     <div>
       <h3>Recent Actions</h3>
-      <table>
+      <table class="sortable" data-sort-key="recentActions">
         <thead><tr><th>Time</th><th>Strategy</th><th>Action</th><th>Reason</th></tr></thead>
         <tbody id="actions"></tbody>
       </table>
     </div>
     <div>
       <h3>Completed Markets</h3>
-      <table>
+      <table class="sortable" data-sort-key="completedMarkets">
         <thead><tr><th>Market</th><th>Outcome</th><th>Top Strategy</th><th>Top Reward</th></tr></thead>
         <tbody id="completed"></tbody>
       </table>
@@ -1690,7 +2110,7 @@ DASHBOARD_HTML = """
   <div class="below">
     <div class="table-panel">
       <h3>Performance Summary</h3>
-      <table>
+      <table class="sortable" data-sort-key="performanceSummary">
         <thead><tr><th>Strategy</th><th>Markets</th><th>Mean Reward</th><th>Total Reward</th><th>Win Rate</th><th>Orders</th></tr></thead>
         <tbody id="completedStats"></tbody>
       </table>
@@ -1707,9 +2127,66 @@ DASHBOARD_HTML = """
   </div>
 <script>
 const socket = io();
+const sortState = {};
 function fmtMoney(x){ return x == null || x === '' ? '--' : Number(x).toFixed(2); }
 function fmtNum(x, d=3){ return x == null || x === '' ? '--' : Number(x).toFixed(d); }
 function clsReward(x){ return Number(x) > 0 ? 'green' : Number(x) < 0 ? 'red' : ''; }
+function parseCellValue(text){
+  const value = (text || '').trim().replace(/,/g, '');
+  if (value === '--' || value === '') return '';
+  if (value.endsWith('%')) {
+    const pct = Number(value.slice(0, -1));
+    if (!Number.isNaN(pct)) return pct;
+  }
+  const num = Number(value);
+  return Number.isNaN(num) ? value.toLowerCase() : num;
+}
+function compareValues(a, b){
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+function ensureSortableTables(root=document){
+  root.querySelectorAll('table.sortable').forEach((table, tableIndex) => {
+    if (!table.dataset.sortKey) table.dataset.sortKey = 'table-' + tableIndex;
+    table.querySelectorAll('th').forEach((header, columnIndex) => {
+      if (!header.querySelector('.sort-indicator')) {
+        const indicator = document.createElement('span');
+        indicator.className = 'sort-indicator';
+        header.appendChild(indicator);
+      }
+      if (header.dataset.sortReady === '1') return;
+      header.dataset.sortReady = '1';
+      header.addEventListener('click', () => {
+        const state = sortState[table.dataset.sortKey] || {};
+        const direction = state.column === columnIndex && state.direction === 'asc' ? 'desc' : 'asc';
+        sortState[table.dataset.sortKey] = { column: columnIndex, direction };
+        applyTableSort(table);
+      });
+    });
+  });
+}
+function applyTableSort(table){
+  const state = sortState[table.dataset.sortKey];
+  if (!state) return;
+  const tbody = table.tBodies[0];
+  if (!tbody) return;
+  table.querySelectorAll('.sort-indicator').forEach(item => item.textContent = '');
+  const header = table.querySelectorAll('th')[state.column];
+  const indicator = header ? header.querySelector('.sort-indicator') : null;
+  if (indicator) indicator.textContent = state.direction === 'asc' ? '▲' : '▼';
+  const rows = Array.from(tbody.rows);
+  rows.sort((rowA, rowB) => {
+    const a = parseCellValue(rowA.children[state.column]?.textContent || '');
+    const b = parseCellValue(rowB.children[state.column]?.textContent || '');
+    const result = compareValues(a, b);
+    return state.direction === 'asc' ? result : -result;
+  });
+  rows.forEach(row => tbody.appendChild(row));
+}
+function applyAllSorts(root=document){
+  ensureSortableTables(root);
+  root.querySelectorAll('table.sortable').forEach(applyTableSort);
+}
 function cumulativeSvg(summary){
   const order = (summary.strategy_order || []).slice(0, 12);
   const paths = summary.cumulative_paths || {};
@@ -1749,12 +2226,13 @@ function renderCompletedSummary(summary){
   ).join('');
   document.getElementById('completedChart').innerHTML = cumulativeSvg(summary);
   const order = summary.strategy_order || [];
-  const header = '<table><thead><tr><th>#</th><th>Market</th><th>Outcome</th>' + order.map(s => `<th>${s}</th>`).join('') + '</tr></thead><tbody>';
+  const header = '<table class="sortable" data-sort-key="marketRewards"><thead><tr><th>#</th><th>Market</th><th>Outcome</th>' + order.map(s => `<th>${s}</th>`).join('') + '</tr></thead><tbody>';
   const rows = (summary.market_rewards || []).slice(-80).map(m =>
     '<tr><td>'+m.market_index+'</td><td>'+m.market_slug+'</td><td>'+m.final_outcome+'</td>' +
     order.map(s => `<td class="${clsReward(m.rewards[s])}">${fmtMoney(m.rewards[s] || 0)}</td>`).join('') + '</tr>'
   ).join('');
   document.getElementById('marketRewardTable').innerHTML = header + rows + '</tbody></table>';
+  applyAllSorts(document.querySelector('.below'));
 }
 socket.on('tick', d => {
   document.getElementById('run').textContent = d.run_dir || '--';
@@ -1765,7 +2243,9 @@ socket.on('tick', d => {
   document.getElementById('left').textContent = d.seconds_left == null ? '--' : Number(d.seconds_left).toFixed(1) + 's';
   document.getElementById('prices').innerHTML = '<span class="green">' + fmtNum(d.up_price) + '</span> / <span class="red">' + fmtNum(d.down_price) + '</span>';
   document.getElementById('btc').textContent = fmtMoney(d.btc_price);
-  document.getElementById('ptb').textContent = fmtMoney(d.price_to_beat) + (d.price_to_beat_source ? ' ' + d.price_to_beat_source : '');
+  document.getElementById('ptb').textContent = fmtMoney(d.price_to_beat);
+  document.getElementById('ptbsrc').textContent = d.price_to_beat_source || '--';
+  document.getElementById('targetstatus').textContent = d.target_status || '--';
   document.getElementById('dist').textContent = d.distance == null ? '--' : fmtMoney(d.distance);
   document.getElementById('slug').textContent = d.current_slug || '--';
   document.getElementById('leaderboard').innerHTML = (d.leaderboard || []).slice(0, 25).map(r =>
@@ -1778,7 +2258,9 @@ socket.on('tick', d => {
     '<tr><td>'+m.market_slug+'</td><td>'+m.final_outcome+'</td><td>'+m.top_strategy+'</td><td>'+fmtMoney(m.top_reward)+'</td></tr>'
   ).join('');
   renderCompletedSummary(d.completed_summary);
+  applyAllSorts();
 });
+applyAllSorts();
 </script>
 </body>
 </html>
@@ -1806,6 +2288,111 @@ def emit_tick_loop():
         time.sleep(0.5)
 
 
+def refresh_target_for_market(suite: LiveStrategySuite, current_market, now_t: float, last_target_refresh_at: float, warning_logged: bool):
+    with suite.lock:
+        elapsed = now_t - suite.state["market_start"] if suite.state["market_start"] else None
+        target_missing = suite.state["price_to_beat"] is None
+        target_source = suite.state["price_to_beat_source"]
+        target_needs_refresh = target_missing or is_target_fallback_source(target_source)
+
+    if target_needs_refresh and now_t - last_target_refresh_at >= 2.0:
+        last_target_refresh_at = now_t
+
+        if suite.args.chainlink_data_streams_target:
+            chainlink_price_to_beat, chainlink_meta = fetch_chainlink_data_streams_price_at(
+                feed_id=suite.args.chainlink_data_streams_feed_id,
+                timestamp_s=int(current_market["start_time"]),
+                api_url=suite.args.chainlink_data_streams_api_url,
+                timeout=suite.args.chainlink_data_streams_timeout,
+            )
+            if chainlink_price_to_beat is not None:
+                with suite.lock:
+                    if (
+                        suite.state["price_to_beat"] is None
+                        or is_target_fallback_source(suite.state["price_to_beat_source"])
+                    ):
+                        old_price_to_beat = suite.state["price_to_beat"]
+                        old_source = suite.state["price_to_beat_source"]
+                        suite.state["price_to_beat"] = chainlink_price_to_beat
+                        suite.state["price_to_beat_source"] = "chainlink_data_streams_report"
+                        if old_price_to_beat is None:
+                            print(
+                                "Price to beat set from Chainlink Data Streams "
+                                f"at t={chainlink_meta.get('observations_timestamp')}: "
+                                f"{chainlink_price_to_beat:.2f}"
+                            )
+                        else:
+                            print(
+                                f"Price to beat replaced {old_source} {old_price_to_beat:.2f} "
+                                f"with Chainlink Data Streams {chainlink_price_to_beat:.2f}"
+                            )
+                return last_target_refresh_at, warning_logged
+            if not warning_logged:
+                warning_logged = True
+                print(
+                    "Chainlink Data Streams target unavailable: "
+                    f"{chainlink_meta.get('error', 'unknown error')}"
+                )
+
+        refreshed_price_to_beat, refreshed_price_to_beat_source = fetch_price_to_beat_with_source_for_market(current_market)
+        if refreshed_price_to_beat is not None:
+            with suite.lock:
+                if suite.state["price_to_beat"] is None:
+                    suite.state["price_to_beat"] = refreshed_price_to_beat
+                    suite.state["price_to_beat_source"] = refreshed_price_to_beat_source or "gamma_refresh"
+                    print(
+                        f"Price to beat refreshed from {suite.state['price_to_beat_source']}: "
+                        f"{refreshed_price_to_beat:.2f}"
+                    )
+                elif (
+                    is_target_fallback_source(suite.state["price_to_beat_source"])
+                    and refreshed_price_to_beat_source == "gamma_event_metadata"
+                ):
+                    old_price_to_beat = suite.state["price_to_beat"]
+                    old_source = suite.state["price_to_beat_source"]
+                    suite.state["price_to_beat"] = refreshed_price_to_beat
+                    suite.state["price_to_beat_source"] = refreshed_price_to_beat_source
+                    print(
+                        f"Price to beat replaced {old_source} {old_price_to_beat:.2f} "
+                        f"with gamma_event_metadata {refreshed_price_to_beat:.2f}"
+                    )
+
+    with suite.lock:
+        elapsed = now_t - suite.state["market_start"] if suite.state["market_start"] else None
+        fallback_allowed = (
+            suite.args.allow_target_fallback
+            and elapsed is not None
+            and elapsed <= suite.args.max_target_fallback_elapsed
+        )
+        if suite.state["price_to_beat"] is None and fallback_allowed and suite.state["btc_chainlink"]:
+            suite.state["price_to_beat"] = suite.state["btc_chainlink"][-1][1]
+            suite.state["price_to_beat_source"] = "chainlink_start_fallback"
+            print(f"Price to beat fallback set from Chainlink at elapsed={elapsed:.3f}s: {suite.state['price_to_beat']:.2f}")
+        if (
+            suite.state["price_to_beat"] is None
+            and fallback_allowed
+            and suite.args.allow_binance_target_fallback
+            and suite.state["btc_binance"]
+        ):
+            suite.state["price_to_beat"] = suite.state["btc_binance"][-1][1]
+            suite.state["price_to_beat_source"] = "binance_start_fallback"
+            print(f"Price to beat fallback set from Binance at elapsed={elapsed:.3f}s: {suite.state['price_to_beat']:.2f}")
+        if (
+            suite.state["price_to_beat"] is None
+            and elapsed is not None
+            and elapsed > suite.args.max_target_fallback_elapsed
+            and not suite.state["target_fallback_warning_logged"]
+        ):
+            suite.state["target_fallback_warning_logged"] = True
+            print(
+                f"Skipping strategy decisions for {suite.state['current_slug']}: "
+                f"missing price_to_beat after elapsed={elapsed:.3f}s. "
+                "Waiting for Gamma target or next full market."
+            )
+
+    return last_target_refresh_at, warning_logged
+
+
 def main():
     global SUITE
     args = parse_args()
@@ -1824,11 +2411,23 @@ def main():
         print(f"Start balance:   {suite.base_starting_balance:.2f} master balance per strategy")
     else:
         print(f"Start balance:   {args.starting_balance:.2f} per strategy per market")
-    print(f"Target fallback: first {args.max_target_fallback_elapsed:.1f}s only")
+    if args.allow_target_fallback:
+        sources = "Chainlink + Binance" if args.allow_binance_target_fallback else "Chainlink only"
+        print(f"Target fallback: enabled for first {args.max_target_fallback_elapsed:.1f}s ({sources})")
+    else:
+        print("Target fallback: disabled; waiting for Gamma price_to_beat")
+    if args.chainlink_data_streams_target:
+        status = "configured" if args.chainlink_data_streams_feed_id else "missing feed ID"
+        api_key, api_secret = chainlink_data_streams_credentials()
+        creds = "credentials present" if api_key and api_secret else "credentials missing"
+        print(f"Chainlink Data Streams target: enabled ({status}, {creds})")
     print(f"Execution mode:  {args.execution_mode}")
     if args.execution_mode == "real":
         print(f"Real order type: {args.real_order_type}")
-        print(f"Real buy cap:    {args.real_max_order_usd:.2f} USDC per order")
+        if args.real_max_order_usd > 0:
+            print(f"Real buy cap:    {args.real_max_order_usd:.2f} USDC per order")
+        else:
+            print("Real buy cap:    disabled; strategy sizes orders")
         print(f"Real order log:  {suite.real_order_path}")
     print(f"Dashboard:       http://localhost:{args.port}")
     print(f"Summary page:    http://localhost:{args.port}/summary")

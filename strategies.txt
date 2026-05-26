@@ -50,18 +50,50 @@ Try variations of momentum strategies
 90: .1
 90: .2
 
-Maybe if up stays at .6 and doesnt move and we have large
-amount of tokens then sell?
+Strategy thoughts/experiments to try:
+Maybe if up stays at .6 and doesnt move or down trends
+then sell?
 		
 if holding up & up above .5 & up down trends: sell up
 or at least part
 
 when buying cheap shares, look at the btc distance and time left
-then either buy cheap one or certain one
+if distance is high and time < 50, buy up
+if distance is medium and time < 20, buy up
+if distance is low, buy down
 
-every 10x milestone, leave aside 10%, and begin trading with this bit too.
+if distance is negative (btc below price to beat)
+buy down if down < 85
+For real money trading
+every 10x milestone, leave aside 10% and dont consider
+it for master balance or anything.
+
+Dynamic ordering:
 
 
+Future exploration:
 hedge bets
 
+
+Run several strategies virtually in parallel.
+Each strategy produces its own signal.
+Only place a real order when one or more selected strategies agree.
+Size the real order based on confidence / recent performance / available cash.
+Avoid duplicate exposure when multiple strategies all want the same side.
+Stop using a sub-strategy temporarily if it is drawing down.
+
+To this, I want to add that we should take the highest order size of two orders when two agree and we choose that way.
+
+If cheap lottery fires, prioritize it.
+Else if chaser and fader both agree on same side, trade.
+Else if only one fires, trade smaller or skip.
+Max one buy per tick.
+Min buy $1.
+Per-market spend cap, e.g. $30.
+Cooldown after losing trades.
+
+To this, im not sure if chaser and fader will agree at the same time, maybe if they agree on opposite sides? e.g. down bias chaser + up bias fader? but idk if that will work.
+And just add if any two of; neutral fader, neutral chaser, lottery, up bias chaser,   down bias fader. (though putting chasers in twice might not be great idea). Thinking about this, its not making sense because theres only really two strategies fader and chaser, because adding up bias chaser and down bias chaser will often result in 2 strategies aligning, but maybe thats what we want, so lets try it)
+If not including neutral fader + up chaser or down fader;
+prioritize up bias chaser and down bias fader, with slightly smaller orders
 

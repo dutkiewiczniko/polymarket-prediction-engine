@@ -171,8 +171,10 @@ def run_batch(
     )
     liquidity_aware_execution = bool(batch_cfg.get("liquidity_aware_execution", False))
     liquidity_depth_window_cents = int(batch_cfg.get("liquidity_depth_window_cents", 2))
-    liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 1.0))
+    liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 0.25))
     liquidity_missing_depth_policy = str(batch_cfg.get("liquidity_missing_depth_policy", "skip"))
+    min_order_usd = float(batch_cfg.get("min_order_usd", 0.0))
+    write_trajectories = bool(batch_cfg.get("write_trajectories", True))
 
     markets = discover_market_csvs(markets_folder, market_pattern)
     if max_markets is not None:
@@ -210,6 +212,7 @@ def run_batch(
         "liquidity_depth_window_cents",
         "liquidity_fill_fraction",
         "liquidity_missing_depth_policy",
+        "min_order_usd",
         "error_type",
         "error_message",
     ]
@@ -236,6 +239,8 @@ def run_batch(
     print(f"Total simulations: {total_jobs}")
     print(f"Compound balances: {compound_balance}")
     print(f"Liquidity-aware execution: {liquidity_aware_execution}")
+    print(f"Min order USD: {min_order_usd:.4f}")
+    print(f"Write trajectories: {write_trajectories}")
     print()
 
     with summary_path.open("w", newline="", encoding="utf-8") as f:
@@ -266,8 +271,9 @@ def run_batch(
                 strategy_market_counts[strategy_name] += 1
                 strategy_market_no = strategy_market_counts[strategy_name]
                 strategy_dir = trajectories_dir / strategy_name
-                strategy_dir.mkdir(parents=True, exist_ok=True)
-                output_csv = strategy_dir / f"{market_slug}.csv"
+                if write_trajectories:
+                    strategy_dir.mkdir(parents=True, exist_ok=True)
+                output_csv = strategy_dir / f"{market_slug}.csv" if write_trajectories else None
 
                 print(f"[{job_no}/{total_jobs}] {market_path.name} -> {strategy_name}")
 
@@ -284,6 +290,7 @@ def run_batch(
                         liquidity_depth_window_cents=liquidity_depth_window_cents,
                         liquidity_fill_fraction=liquidity_fill_fraction,
                         liquidity_missing_depth_policy=liquidity_missing_depth_policy,
+                        min_order_usd=min_order_usd,
                     )
 
                     result_dict = asdict(result)
@@ -294,7 +301,7 @@ def run_batch(
                         "market_path": str(market_path),
                         "strategy_config": strategy_entry["source_config"],
                         "strategy_run_name": strategy_name,
-                        "output_csv": str(output_csv),
+                        "output_csv": str(output_csv or ""),
                         "compound_balance_mode": compound_balance,
                         "strategy_market_no": strategy_market_no,
                         "strategy_balance_before_market": master_balance_before_market,
@@ -309,6 +316,7 @@ def run_batch(
                         "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
                         "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
                         "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
+                        "min_order_usd": min_order_usd,
                         "error_type": "",
                         "error_message": "",
                         **result_dict,
@@ -331,7 +339,7 @@ def run_batch(
                         "market_path": str(market_path),
                         "strategy_config": strategy_entry["source_config"],
                         "strategy_run_name": strategy_name,
-                        "output_csv": str(output_csv),
+                        "output_csv": str(output_csv or ""),
                         "compound_balance_mode": compound_balance,
                         "strategy_market_no": strategy_market_no,
                         "strategy_balance_before_market": master_balance_before_market,
@@ -342,6 +350,7 @@ def run_batch(
                         "liquidity_depth_window_cents": liquidity_depth_window_cents if liquidity_aware_execution else "",
                         "liquidity_fill_fraction": liquidity_fill_fraction if liquidity_aware_execution else "",
                         "liquidity_missing_depth_policy": liquidity_missing_depth_policy if liquidity_aware_execution else "",
+                        "min_order_usd": min_order_usd,
                         "error_type": type(e).__name__,
                         "error_message": str(e),
                     }

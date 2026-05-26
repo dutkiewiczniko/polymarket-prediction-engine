@@ -618,7 +618,15 @@ def build_balance_path_rows(summary_df: pd.DataFrame) -> list[dict]:
     if ok_df.empty or "strategy_key" not in ok_df.columns:
         return []
 
-    for column in ["starting_balance", "final_balance", "strategy_market_no"]:
+    for column in [
+        "starting_balance",
+        "final_balance",
+        "strategy_balance_before_market",
+        "strategy_balance_after_market",
+        "master_balance_before_market",
+        "master_balance_after_market",
+        "strategy_market_no",
+    ]:
         if column in ok_df.columns:
             ok_df[column] = pd.to_numeric(ok_df[column], errors="coerce")
 
@@ -632,10 +640,18 @@ def build_balance_path_rows(summary_df: pd.DataFrame) -> list[dict]:
 
         points = []
         for idx, (_, row) in enumerate(ordered.iterrows(), start=1):
-            start_balance = row.get("strategy_balance_before_market", row.get("starting_balance"))
-            end_balance = row.get("strategy_balance_after_market", row.get("final_balance"))
-            start_balance = pd.to_numeric(pd.Series([start_balance]), errors="coerce").iloc[0]
-            end_balance = pd.to_numeric(pd.Series([end_balance]), errors="coerce").iloc[0]
+            if "master_balance_before_market" in ordered.columns and "master_balance_after_market" in ordered.columns:
+                start_balance = row.get("master_balance_before_market")
+                end_balance = row.get("master_balance_after_market")
+                balance_source = "master"
+            elif "strategy_balance_before_market" in ordered.columns and "strategy_balance_after_market" in ordered.columns:
+                start_balance = row.get("strategy_balance_before_market")
+                end_balance = row.get("strategy_balance_after_market")
+                balance_source = "strategy"
+            else:
+                start_balance = row.get("starting_balance")
+                end_balance = row.get("final_balance")
+                balance_source = "market"
             if pd.isna(start_balance) or pd.isna(end_balance):
                 continue
             points.append({"x": idx - 0.45, "balance": float(start_balance), "kind": "start"})
@@ -646,6 +662,7 @@ def build_balance_path_rows(summary_df: pd.DataFrame) -> list[dict]:
 
         rows.append({
             "strategy_key": strategy_key,
+            "balance_source": balance_source,
             "points": points,
             "market_count": int(len(ordered)),
             "first_balance": float(points[0]["balance"]),
@@ -691,6 +708,7 @@ def balance_path_svg(balance_row: dict, width=620, height=190) -> str:
     title = str(balance_row.get("strategy_key", ""))
     subtitle = (
         f"markets={balance_row.get('market_count', 0)} "
+        f"source={balance_row.get('balance_source', 'balance')} "
         f"start={fmt(balance_row.get('first_balance'), 2)} "
         f"end={fmt(balance_row.get('last_balance'), 2)}"
     )
@@ -737,7 +755,11 @@ def render_report(
     strategy_count = int(summary_df["strategy_key"].nunique())
     best = stats_df.iloc[0] if not stats_df.empty else {}
 
-    stats_with_actions = stats_df.merge(action_df, on="strategy_key", how="left") if not stats_df.empty else stats_df
+    stats_with_actions = (
+        stats_df.merge(action_df, on="strategy_key", how="left")
+        if not stats_df.empty and "strategy_key" in action_df.columns
+        else stats_df.copy()
+    )
     stats_columns = [
         "strategy_key",
         "runs",
