@@ -1,0 +1,27 @@
+# Grouped backtest balance settings: 40 tradable master, 50 reserve.
+
+starting_balance: 40
+initial_reserved_balance: 50
+effective_market_balance_cap:
+
+withdrawal_pct: 0.10
+withdrawal_thresholds:
+  - 100
+  - 1000
+  - 10000
+  - 100000
+  - 1000000
+
+effective_market_balance_bands:
+  - [1, 16, 5]
+  - [16, 31, 10]
+  - [31, 75, 15]
+  - [75, 150, 30]
+  - [150, 750, 60]
+  - [750, 1500, 120]
+  - [1500, 3000, 240]
+  - [3000, 6000, 480]
+  - [6000, 12000, 960]
+  - [12000, null, 1920]
+
+effective_market_balance_default: 0
