@@ -24,6 +24,12 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
         strategy.name = cfg.get("name", strategy.name)
         return strategy
 
+    if strategy_type in {"strategy_ref", "alias"}:
+        ref_cfg = load_yaml(cfg["config"])
+        strategy = build_strategy_from_config(ref_cfg)
+        strategy.name = cfg.get("name") or ref_cfg.get("name") or strategy.name
+        return strategy
+
     if strategy_type == "random":
         params = cfg.get("params", {})
         strategy = RandomStrategy(
@@ -94,6 +100,12 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
             base=base_strategy,
             override_name=params["override"].get("label") or override_cfg.get("name") or "override",
             base_name=params["base"].get("label") or base_cfg.get("name") or "base",
+            suppress_base_while_override_position=bool(params.get("suppress_base_while_override_position", False)),
+            suppress_base_when_override_near_price=(
+                float(params["suppress_base_when_override_near_price"])
+                if params.get("suppress_base_when_override_near_price") is not None
+                else None
+            ),
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy

@@ -1,0 +1,3 @@
+name: exp_01_baseline_up_bias
+type: strategy_ref
+config: configs/strategies/live_mix_orderbook_consumption/up_bias_chaser_tp095_cheap0025_tok20.yaml

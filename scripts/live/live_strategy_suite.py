@@ -241,9 +241,9 @@ def parse_args():
     )
     parser.add_argument(
         "--trajectory-log-mode",
-        choices=["all", "actions"],
+        choices=["none", "all", "actions"],
         default="all",
-        help="Write every strategy tick to trajectory CSVs, or only rows where an action/event occurred.",
+        help="Write no trajectory CSVs, every strategy tick, or only rows where an action/event occurred.",
     )
     parser.add_argument(
         "--max-target-fallback-elapsed",
@@ -1245,16 +1245,19 @@ class LiveStrategySuite:
             strategy_dir.mkdir(parents=True, exist_ok=True)
             output_path = strategy_dir / f"{market_slug}.csv"
             rows_to_write = runtime.rows
-            if self.args.trajectory_log_mode == "actions":
+            if self.args.trajectory_log_mode == "none":
+                rows_to_write = []
+            elif self.args.trajectory_log_mode == "actions":
                 rows_to_write = [
                     row
                     for row in runtime.rows
                     if row.get("action") != "hold" or int(row.get("events_count") or 0) > 0
                 ]
-            with output_path.open("w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=TRAJECTORY_COLUMNS)
-                writer.writeheader()
-                writer.writerows(rows_to_write)
+            if self.args.trajectory_log_mode != "none":
+                with output_path.open("w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=TRAJECTORY_COLUMNS)
+                    writer.writeheader()
+                    writer.writerows(rows_to_write)
 
             summary_row = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -1909,6 +1912,10 @@ def build_completed_summary(rows):
         reward = to_float(row.get("total_reward"))
         orders = to_int(row.get("orders_placed"))
         final_balance = to_float(row.get("final_balance"))
+        master_after = to_float(row.get("master_balance_after_market"))
+        reserve_after = to_float(row.get("reserved_balance_after_market"))
+        total_equity_after = master_after + reserve_after
+        master_before = to_float(row.get("master_balance_before_market"))
 
         stats = leaderboard.setdefault(name, {
             "strategy_name": name,
@@ -1920,6 +1927,10 @@ def build_completed_summary(rows):
             "best_reward": reward,
             "worst_reward": reward,
             "last_final_balance": final_balance,
+            "last_master_balance": master_after,
+            "last_reserved_balance": reserve_after,
+            "last_total_equity": total_equity_after,
+            "initial_master_balance": master_before,
         })
         stats["markets"] += 1
         stats["total_reward"] += reward
@@ -1929,13 +1940,20 @@ def build_completed_summary(rows):
         stats["best_reward"] = max(stats["best_reward"], reward)
         stats["worst_reward"] = min(stats["worst_reward"], reward)
         stats["last_final_balance"] = final_balance
+        stats["last_master_balance"] = master_after
+        stats["last_reserved_balance"] = reserve_after
+        stats["last_total_equity"] = total_equity_after
 
         market = market_rewards.setdefault(market_slug, {
             "market_slug": market_slug,
             "final_outcome": row.get("final_outcome", ""),
             "rewards": {},
+            "masters": {},
+            "reserves": {},
         })
         market["rewards"][name] = reward
+        market["masters"][name] = master_after
+        market["reserves"][name] = reserve_after
 
     leaders = sorted(leaderboard.values(), key=lambda row: row["total_reward"], reverse=True)
     for stats in leaders:
@@ -1947,24 +1965,45 @@ def build_completed_summary(rows):
     strategy_order = [row["strategy_name"] for row in leaders]
     cumulative = {name: 0.0 for name in strategy_order}
     paths = {name: [{"market_index": 0, "market_slug": "start", "cumulative_reward": 0.0}] for name in strategy_order}
+    master_paths = {
+        row["strategy_name"]: [{
+            "market_index": 0,
+            "market_slug": "start",
+            "master_balance": row.get("initial_master_balance", 0.0),
+        }]
+        for row in leaders
+    }
     market_table = []
     for idx, market_slug in enumerate(market_order, start=1):
-        market = market_rewards.get(market_slug, {"market_slug": market_slug, "final_outcome": "", "rewards": {}})
+        market = market_rewards.get(market_slug, {"market_slug": market_slug, "final_outcome": "", "rewards": {}, "masters": {}, "reserves": {}})
         rewards = {}
+        masters = {}
+        reserves = {}
         for name in strategy_order:
             reward = to_float(market["rewards"].get(name), 0.0)
+            master_balance = to_float(market["masters"].get(name), 0.0)
+            reserve_balance = to_float(market["reserves"].get(name), 0.0)
             rewards[name] = reward
+            masters[name] = master_balance
+            reserves[name] = reserve_balance
             cumulative[name] += reward
             paths[name].append({
                 "market_index": idx,
                 "market_slug": market_slug,
                 "cumulative_reward": cumulative[name],
             })
+            master_paths[name].append({
+                "market_index": idx,
+                "market_slug": market_slug,
+                "master_balance": master_balance,
+            })
         market_table.append({
             "market_index": idx,
             "market_slug": market_slug,
             "final_outcome": market.get("final_outcome", ""),
             "rewards": rewards,
+            "masters": masters,
+            "reserves": reserves,
         })
 
     return {
@@ -1972,19 +2011,31 @@ def build_completed_summary(rows):
         "strategy_order": strategy_order,
         "market_rewards": market_table,
         "cumulative_paths": paths,
+        "master_paths": master_paths,
         "recent_rows": ok_rows[-100:][::-1],
     }
 
 
-def cumulative_reward_svg(paths, strategy_order, width=1220, height=360, max_strategies=12):
+def cumulative_reward_svg(
+    paths,
+    strategy_order,
+    width=1220,
+    height=360,
+    max_strategies=12,
+    value_key="cumulative_reward",
+    title="Cumulative reward by strategy",
+    include_zero=True,
+):
     selected = strategy_order[:max_strategies]
     points = [point for name in selected for point in paths.get(name, [])]
     if not selected or not points:
-        return "<p class=\"muted\">No completed market rewards yet.</p>"
+        return "<p class=\"muted\">No completed market data yet.</p>"
 
     x_min = 0
     x_max = max(point["market_index"] for point in points) or 1
-    y_values = [point["cumulative_reward"] for point in points] + [0.0]
+    y_values = [to_float(point.get(value_key), 0.0) for point in points]
+    if include_zero:
+        y_values.append(0.0)
     y_min = min(y_values)
     y_max = max(y_values)
     if y_min == y_max:
@@ -2003,8 +2054,8 @@ def cumulative_reward_svg(paths, strategy_order, width=1220, height=360, max_str
         return top + chart_h - (y - y_min) / (y_max - y_min) * chart_h
 
     parts = [
-        f"<svg viewBox=\"0 0 {width} {height}\" role=\"img\" aria-label=\"Cumulative reward paths\">",
-        "<text x=\"16\" y=\"22\" class=\"chart-title\">Cumulative reward by strategy</text>",
+        f"<svg viewBox=\"0 0 {width} {height}\" role=\"img\" aria-label=\"{html_escape(title)}\">",
+        f"<text x=\"16\" y=\"22\" class=\"chart-title\">{html_escape(title)}</text>",
         f"<line x1=\"{left}\" y1=\"{sy(0):.1f}\" x2=\"{left + chart_w}\" y2=\"{sy(0):.1f}\" class=\"zero-line\" />",
         f"<line x1=\"{left}\" y1=\"{top}\" x2=\"{left}\" y2=\"{top + chart_h}\" class=\"grid-line\" />",
         f"<line x1=\"{left}\" y1=\"{top + chart_h}\" x2=\"{left + chart_w}\" y2=\"{top + chart_h}\" class=\"grid-line\" />",
@@ -2017,11 +2068,11 @@ def cumulative_reward_svg(paths, strategy_order, width=1220, height=360, max_str
         series = paths.get(name, [])
         if len(series) < 2:
             continue
-        point_text = " ".join(f"{sx(p['market_index']):.1f},{sy(p['cumulative_reward']):.1f}" for p in series)
+        point_text = " ".join(f"{sx(p['market_index']):.1f},{sy(to_float(p.get(value_key), 0.0)):.1f}" for p in series)
         color = colors[i % len(colors)]
         parts.append(f"<polyline points=\"{point_text}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"2\" />")
         end = series[-1]
-        parts.append(f"<circle cx=\"{sx(end['market_index']):.1f}\" cy=\"{sy(end['cumulative_reward']):.1f}\" r=\"3\" fill=\"{color}\" />")
+        parts.append(f"<circle cx=\"{sx(end['market_index']):.1f}\" cy=\"{sy(to_float(end.get(value_key), 0.0)):.1f}\" r=\"3\" fill=\"{color}\" />")
         legend_y = top + 18 + i * 20
         parts.append(f"<line x1=\"{left + chart_w + 18}\" y1=\"{legend_y}\" x2=\"{left + chart_w + 34}\" y2=\"{legend_y}\" stroke=\"{color}\" stroke-width=\"2\" />")
         parts.append(f"<text x=\"{left + chart_w + 40}\" y=\"{legend_y + 4}\" class=\"legend-label\">{html_escape(name)[:34]}</text>")
@@ -2042,7 +2093,7 @@ def render_static_summary(run_dir, summary_path, summary):
     market_rewards = summary["market_rewards"]
     strategy_order = summary["strategy_order"]
     leader_rows = "\n".join(
-        f"<tr><td>{esc(row['strategy_name'])}</td><td>{row['markets']}</td><td>{row['mean_reward']:.4f}</td><td>{row['total_reward']:.4f}</td><td>{row['win_rate']:.1%}</td><td>{row['orders']}</td></tr>"
+        f"<tr><td>{esc(row['strategy_name'])}</td><td>{row['markets']}</td><td>{row['mean_reward']:.4f}</td><td>{row['total_reward']:.4f}</td><td>{row['win_rate']:.1%}</td><td>{row['orders']}</td><td>{row['last_master_balance']:.4f}</td><td>{row['last_reserved_balance']:.4f}</td><td>{row['last_total_equity']:.4f}</td></tr>"
         for row in leaders
     )
     recent_rows = "\n".join(
@@ -2064,7 +2115,13 @@ def render_static_summary(run_dir, summary_path, summary):
         + "</tr>"
         for row in market_rewards[-80:]
     )
-    reward_path = cumulative_reward_svg(summary["cumulative_paths"], strategy_order)
+    balance_path = cumulative_reward_svg(
+        summary["master_paths"],
+        strategy_order,
+        value_key="master_balance",
+        title="Master balance by strategy",
+        include_zero=False,
+    )
     return f"""<!doctype html>
 <html>
 <head>
@@ -2099,12 +2156,12 @@ def render_static_summary(run_dir, summary_path, summary):
   <main>
     <section>
       <h2>Performance Summary</h2>
-      <table class="sortable"><thead><tr><th>Strategy<span class="sort-indicator"></span></th><th>Markets<span class="sort-indicator"></span></th><th>Mean Reward<span class="sort-indicator"></span></th><th>Total Reward<span class="sort-indicator"></span></th><th>Win Rate<span class="sort-indicator"></span></th><th>Orders<span class="sort-indicator"></span></th></tr></thead><tbody>{leader_rows}</tbody></table>
+      <table class="sortable"><thead><tr><th>Strategy<span class="sort-indicator"></span></th><th>Markets<span class="sort-indicator"></span></th><th>Mean Reward<span class="sort-indicator"></span></th><th>Total Reward<span class="sort-indicator"></span></th><th>Win Rate<span class="sort-indicator"></span></th><th>Orders<span class="sort-indicator"></span></th><th>Master<span class="sort-indicator"></span></th><th>Reserve<span class="sort-indicator"></span></th><th>Total Equity<span class="sort-indicator"></span></th></tr></thead><tbody>{leader_rows}</tbody></table>
     </section>
     <section>
       <h2>Balance Paths By Strategy</h2>
-      <p class="muted">Each line adds the market reward in sequence, so the slope shows how the live paper account would compound across completed markets.</p>
-      <div class="chart-scroll">{reward_path}</div>
+      <p class="muted">Each line shows the completed-market master balance, so refills, drawdowns, and compounding are visible.</p>
+      <div class="chart-scroll">{balance_path}</div>
     </section>
     <section>
       <h2>Reward By Market</h2>
@@ -2222,7 +2279,7 @@ DASHBOARD_HTML = """
     <div>
       <h3>Live Leaderboard</h3>
       <table class="sortable" data-sort-key="liveLeaderboard">
-        <thead><tr><th>Strategy</th><th>Reward</th><th>Market Bal</th><th>Master</th><th>Eff Start</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
+        <thead><tr><th>Strategy</th><th>Reward</th><th>Market Bal</th><th>Master</th><th>Reserve</th><th>Eff Start</th><th>Cash</th><th>UP</th><th>DOWN</th><th>Orders</th><th>Last</th></tr></thead>
         <tbody id="leaderboard"></tbody>
       </table>
     </div>
@@ -2245,13 +2302,13 @@ DASHBOARD_HTML = """
     <div class="table-panel">
       <h3>Performance Summary</h3>
       <table class="sortable" data-sort-key="performanceSummary">
-        <thead><tr><th>Strategy</th><th>Markets</th><th>Mean Reward</th><th>Total Reward</th><th>Win Rate</th><th>Orders</th></tr></thead>
+        <thead><tr><th>Strategy</th><th>Markets</th><th>Mean Reward</th><th>Total Reward</th><th>Win Rate</th><th>Orders</th><th>Master</th><th>Reserve</th><th>Total Equity</th></tr></thead>
         <tbody id="completedStats"></tbody>
       </table>
     </div>
     <div class="chart-panel">
       <h3>Balance Paths By Strategy</h3>
-      <div class="muted">Cumulative reward across completed live markets.</div>
+      <div class="muted">Master balance after each completed live market.</div>
       <div id="completedChart"></div>
     </div>
     <div class="table-panel">
@@ -2323,19 +2380,19 @@ function applyAllSorts(root=document){
 }
 function cumulativeSvg(summary){
   const order = (summary.strategy_order || []).slice(0, 12);
-  const paths = summary.cumulative_paths || {};
+  const paths = summary.master_paths || {};
   const all = order.flatMap(name => paths[name] || []);
-  if (!order.length || !all.length) return '<div class="muted">No completed market rewards yet.</div>';
+  if (!order.length || !all.length) return '<div class="muted">No completed market data yet.</div>';
   const width = 1220, height = 360, left = 70, right = 220, top = 34, bottom = 42;
   const chartW = width - left - right, chartH = height - top - bottom;
   const xMax = Math.max(...all.map(p => Number(p.market_index) || 0), 1);
-  const yVals = all.map(p => Number(p.cumulative_reward) || 0).concat([0]);
+  const yVals = all.map(p => Number(p.master_balance) || 0);
   let yMin = Math.min(...yVals), yMax = Math.max(...yVals);
   if (yMin === yMax) { yMin -= 1; yMax += 1; }
   const sx = x => left + (x / xMax) * chartW;
   const sy = y => top + chartH - ((y - yMin) / (yMax - yMin)) * chartH;
   const colors = ['#8ec1ff','#6fd38b','#ffb86b','#ff7d7d','#c792ea','#66d9ef','#f78fb3','#d7ba7d','#9cdcfe','#b5cea8','#dcdcaa','#ce9178'];
-  let out = `<svg viewBox="0 0 ${width} ${height}" role="img"><text x="16" y="22" class="chart-title">Cumulative reward by strategy</text>`;
+  let out = `<svg viewBox="0 0 ${width} ${height}" role="img"><text x="16" y="22" class="chart-title">Master balance by strategy</text>`;
   out += `<line x1="${left}" y1="${sy(0).toFixed(1)}" x2="${left + chartW}" y2="${sy(0).toFixed(1)}" class="zero-line" />`;
   out += `<line x1="${left}" y1="${top}" x2="${left}" y2="${top + chartH}" class="grid-line" />`;
   out += `<line x1="${left}" y1="${top + chartH}" x2="${left + chartW}" y2="${top + chartH}" class="grid-line" />`;
@@ -2344,7 +2401,7 @@ function cumulativeSvg(summary){
     const series = paths[name] || [];
     if (series.length < 2) return;
     const color = colors[i % colors.length];
-    const pts = series.map(p => `${sx(Number(p.market_index)||0).toFixed(1)},${sy(Number(p.cumulative_reward)||0).toFixed(1)}`).join(' ');
+    const pts = series.map(p => `${sx(Number(p.market_index)||0).toFixed(1)},${sy(Number(p.master_balance)||0).toFixed(1)}`).join(' ');
     out += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" />`;
     const y = top + 18 + i * 20;
     out += `<line x1="${left + chartW + 18}" y1="${y}" x2="${left + chartW + 34}" y2="${y}" stroke="${color}" stroke-width="2" />`;
@@ -2356,7 +2413,7 @@ function renderCompletedSummary(summary){
   summary = summary || {};
   const leaders = summary.leaderboard || [];
   document.getElementById('completedStats').innerHTML = leaders.map(r =>
-    `<tr><td>${r.strategy_name}</td><td>${r.markets}</td><td>${fmtMoney(r.mean_reward)}</td><td>${fmtMoney(r.total_reward)}</td><td>${fmtNum((r.win_rate || 0) * 100,1)}%</td><td>${r.orders}</td></tr>`
+    `<tr><td>${r.strategy_name}</td><td>${r.markets}</td><td>${fmtMoney(r.mean_reward)}</td><td>${fmtMoney(r.total_reward)}</td><td>${fmtNum((r.win_rate || 0) * 100,1)}%</td><td>${r.orders}</td><td>${fmtMoney(r.last_master_balance)}</td><td>${fmtMoney(r.last_reserved_balance)}</td><td>${fmtMoney(r.last_total_equity)}</td></tr>`
   ).join('');
   document.getElementById('completedChart').innerHTML = cumulativeSvg(summary);
   const order = summary.strategy_order || [];
@@ -2383,7 +2440,7 @@ socket.on('tick', d => {
   document.getElementById('dist').textContent = d.distance == null ? '--' : fmtMoney(d.distance);
   document.getElementById('slug').textContent = d.current_slug || '--';
   document.getElementById('leaderboard').innerHTML = (d.leaderboard || []).slice(0, 25).map(r =>
-    '<tr><td>'+r.strategy_name+'</td><td>'+fmtMoney(r.reward)+'</td><td>'+fmtMoney(r.balance)+'</td><td>'+fmtMoney(r.master_balance)+'</td><td>'+fmtMoney(r.market_starting_balance)+'</td><td>'+fmtMoney(r.cash)+'</td><td>'+fmtNum(r.up_tokens,2)+'</td><td>'+fmtNum(r.down_tokens,2)+'</td><td>'+r.orders+'</td><td>'+r.last_action+'</td></tr>'
+    '<tr><td>'+r.strategy_name+'</td><td>'+fmtMoney(r.reward)+'</td><td>'+fmtMoney(r.balance)+'</td><td>'+fmtMoney(r.master_balance)+'</td><td>'+fmtMoney(r.reserved_balance)+'</td><td>'+fmtMoney(r.market_starting_balance)+'</td><td>'+fmtMoney(r.cash)+'</td><td>'+fmtNum(r.up_tokens,2)+'</td><td>'+fmtNum(r.down_tokens,2)+'</td><td>'+r.orders+'</td><td>'+r.last_action+'</td></tr>'
   ).join('');
   document.getElementById('actions').innerHTML = (d.latest_actions || []).slice(0, 16).map(a =>
     '<tr><td>'+a.timestamp+'</td><td>'+a.strategy_name+'</td><td>'+a.action+'</td><td>'+a.reason+'</td></tr>'

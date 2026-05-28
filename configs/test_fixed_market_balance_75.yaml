@@ -1,0 +1,4 @@
+starting_balance: 75
+initial_reserved_balance: 0
+effective_market_balance_cap: 75
+effective_market_balance_default: 75

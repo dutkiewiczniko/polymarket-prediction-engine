@@ -242,9 +242,9 @@ def write_report(run_dir: Path, group_df: pd.DataFrame, market_df: pd.DataFrame,
 
     compact_groups = "\n".join(
         f'<div class="mini {"win" if row.group_reward > 0 else "loss" if row.group_reward < 0 else ""}">'
-        f'<div class="mini-head"><b>G{int(row.group):02d}</b><span>{fmt_money(row.final_master)}</span></div>'
+        f'<div class="mini-head"><b>G{int(row.group):02d}</b><span>M {fmt_money(row.final_master)} | R {fmt_money(row.final_reserve)}</span></div>'
         f'{sparkline([float(x) for x in str(row.balance_path).split("|")], width=170, height=44)}'
-        f'<div class="mini-sub">PnL {fmt_money(row.group_reward)} | orders {int(row.orders_placed)}</div>'
+        f'<div class="mini-sub">PnL {fmt_money(row.group_reward)} | equity {fmt_money(row.final_total_equity)} | orders {int(row.orders_placed)}</div>'
         "</div>"
         for row in group_df.itertuples(index=False)
     )
@@ -260,7 +260,7 @@ def write_report(run_dir: Path, group_df: pd.DataFrame, market_df: pd.DataFrame,
     market_rows = "\n".join(
         f"<tr><td>{int(row.group)}</td><td>{int(row.market_in_group)}</td><td>{html.escape(Path(row.market_file).name)}</td>"
         f"<td>{html.escape(str(row.final_outcome))}</td><td>{fmt_money(row.effective_balance)}</td>"
-        f"<td>{fmt_money(row.reward)}</td><td>{fmt_money(row.master_after)}</td>"
+        f"<td>{fmt_money(row.reward)}</td><td>{fmt_money(row.master_after)}</td><td>{fmt_money(row.reserve_after)}</td><td>{fmt_money(row.total_equity_after)}</td>"
         f"<td>{int(row.orders_placed)}</td><td>{int(row.capped_rows)}</td>"
         f"<td>{fmt_money(row.executed_usd)}</td><td>{fmt_money(row.max_order_usd)}</td></tr>"
         for row in market_df.itertuples(index=False)
@@ -341,7 +341,7 @@ def write_report(run_dir: Path, group_df: pd.DataFrame, market_df: pd.DataFrame,
 
   <section>
     <h2>Market Details</h2>
-    <div class="scroll"><table><thead><tr><th>Group</th><th>#</th><th>Market</th><th>Outcome</th><th>Eff Bal</th><th>Reward</th><th>Master After</th><th>Orders</th><th>Capped</th><th>Executed USD</th><th>Max Order</th></tr></thead><tbody>{market_rows}</tbody></table></div>
+    <div class="scroll"><table><thead><tr><th>Group</th><th>#</th><th>Market</th><th>Outcome</th><th>Eff Bal</th><th>Reward</th><th>Master After</th><th>Reserve After</th><th>Total Equity</th><th>Orders</th><th>Capped</th><th>Executed USD</th><th>Max Order</th></tr></thead><tbody>{market_rows}</tbody></table></div>
   </section>
 </main>
 </body>
@@ -382,6 +382,7 @@ def main():
         reserve = initial_reserve
         triggered = set()
         balance_path = [master]
+        reserve_path = [reserve]
         master_history = [master]
         cooldown_markets_remaining = 0
         group_market_rewards = []
@@ -400,6 +401,7 @@ def main():
                 reward = 0.0
                 balance_path.append(master)
                 master_history.append(master)
+                reserve_path.append(reserve)
                 group_market_rewards.append(reward)
                 market_rows.append({
                     "group": group_index + 1,
@@ -473,6 +475,7 @@ def main():
                     int(balance_cfg.get("reserve_drawdown_skip_markets", 0) or 0),
                 )
             balance_path.append(master)
+            reserve_path.append(reserve)
             group_market_rewards.append(reward)
             group_orders += trajectory_stats["orders_placed"]
             group_capped += trajectory_stats["capped_rows"]
@@ -528,6 +531,7 @@ def main():
             "executed_usd": group_executed,
             "max_order_usd": group_max_order,
             "balance_path": "|".join(f"{value:.10g}" for value in balance_path),
+            "reserve_path": "|".join(f"{value:.10g}" for value in reserve_path),
         })
 
     market_df = pd.DataFrame(market_rows)
