@@ -35,7 +35,7 @@ params:
           operator: "<="
           value: 0.025
       action: buy_up
-      token_amount: 30
+      token_amount: 50
 
     - name: cheap_down_optional_lottery
       all:
