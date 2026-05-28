@@ -12,7 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from simulator.batch import discover_market_csvs, resolve_effective_market_balance
+from simulator.batch import (
+    apply_drawdown_reserve_top_up,
+    apply_reserve_top_up,
+    discover_market_csvs,
+    resolve_effective_market_balance,
+)
 from simulator.config_loader import build_strategy_from_config, load_yaml
 from simulator.replay import run_simulation
 
@@ -377,6 +382,8 @@ def main():
         reserve = initial_reserve
         triggered = set()
         balance_path = [master]
+        master_history = [master]
+        cooldown_markets_remaining = 0
         group_market_rewards = []
         group_orders = 0
         group_capped = 0
@@ -386,7 +393,44 @@ def main():
 
         print(f"Group {group_index + 1}/{args.groups}")
         for market_in_group, market_path in enumerate(group_markets, start=1):
+            master, reserve, topped_up = apply_reserve_top_up(master, reserve, balance_cfg)
             master_before = master
+            if cooldown_markets_remaining > 0:
+                cooldown_markets_remaining -= 1
+                reward = 0.0
+                balance_path.append(master)
+                master_history.append(master)
+                group_market_rewards.append(reward)
+                market_rows.append({
+                    "group": group_index + 1,
+                    "market_in_group": market_in_group,
+                    "market_file": str(market_path),
+                    "final_outcome": "skipped",
+                    "reserve_top_up_before_market": topped_up,
+                    "drawdown_top_up_after_market": 0.0,
+                    "cooldown_markets_remaining": cooldown_markets_remaining,
+                    "master_before": master_before,
+                    "effective_balance": 0.0,
+                    "market_final_balance": 0.0,
+                    "reward": reward,
+                    "master_after_before_withdrawal": master,
+                    "withdrawn_after_market": 0.0,
+                    "master_after": master,
+                    "reserve_after": reserve,
+                    "total_equity_after": master + reserve,
+                    "orders_placed": 0,
+                    "buy_up_events": 0,
+                    "buy_down_events": 0,
+                    "sell_rows": 0,
+                    "capped_rows": 0,
+                    "requested_usd": 0.0,
+                    "executed_usd": 0.0,
+                    "max_order_usd": 0.0,
+                    "rows_written": 0,
+                    "output_csv": "",
+                })
+                continue
+
             effective_balance = resolve_effective_market_balance(master_before, balance_cfg)
             if effective_balance is None:
                 effective_balance = master_before
@@ -415,6 +459,19 @@ def main():
                 triggered,
                 balance_cfg,
             )
+            master_history.append(master)
+            master, reserve, drawdown_topped_up, drawdown_triggered = apply_drawdown_reserve_top_up(
+                master,
+                reserve,
+                master_history,
+                balance_cfg,
+            )
+            if drawdown_triggered:
+                master_history = [master]
+                cooldown_markets_remaining = max(
+                    cooldown_markets_remaining,
+                    int(balance_cfg.get("reserve_drawdown_skip_markets", 0) or 0),
+                )
             balance_path.append(master)
             group_market_rewards.append(reward)
             group_orders += trajectory_stats["orders_placed"]
@@ -428,6 +485,9 @@ def main():
                 "market_in_group": market_in_group,
                 "market_file": str(market_path),
                 "final_outcome": result.final_outcome,
+                "reserve_top_up_before_market": topped_up,
+                "drawdown_top_up_after_market": drawdown_topped_up,
+                "cooldown_markets_remaining": cooldown_markets_remaining,
                 "master_before": master_before,
                 "effective_balance": effective_balance,
                 "market_final_balance": result.final_balance,

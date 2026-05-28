@@ -1,0 +1,43 @@
+# Start with 60 tradable master and 180 reserve.
+# If tradable master drops below 1, move one third of reserve back into master.
+# Existing 10% virtual withdrawals at 10x-style thresholds are still enabled.
+
+starting_balance: 60
+initial_reserved_balance: 180
+effective_market_balance_cap:
+
+reserve_top_up_enabled: true
+reserve_top_up_master_threshold: 1
+reserve_top_up_reserve_pct: 0.3333333333333333
+reserve_top_up_min_amount: 5
+
+# If a strategy loses 60% from its recent 10-market master-balance peak,
+# refresh from reserve and sit out 2 markets before trading again.
+reserve_drawdown_top_up_enabled: true
+reserve_drawdown_window_markets: 10
+reserve_drawdown_pct: 0.60
+reserve_drawdown_reserve_pct: 0.3333333333333333
+reserve_drawdown_min_amount: 5
+reserve_drawdown_skip_markets: 2
+
+withdrawal_pct: 0.10
+withdrawal_thresholds:
+  - 100
+  - 1000
+  - 10000
+  - 100000
+  - 1000000
+
+effective_market_balance_bands:
+  - [1, 16, 5]
+  - [16, 31, 10]
+  - [31, 75, 15]
+  - [75, 150, 30]
+  - [150, 750, 60]
+  - [750, 1500, 120]
+  - [1500, 3000, 240]
+  - [3000, 6000, 480]
+  - [6000, 12000, 960]
+  - [12000, null, 1920]
+
+effective_market_balance_default: 0

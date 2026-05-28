@@ -38,7 +38,7 @@ if str(REPO_ROOT) not in sys.path:
 from simulator.config_loader import build_strategy_from_config, load_yaml
 from simulator.execution import execute_action
 from simulator.liquidity import liquidity_execution_prices, liquidity_limits_for_action
-from simulator.batch import resolve_effective_market_balance
+from simulator.batch import apply_drawdown_reserve_top_up, apply_reserve_top_up, resolve_effective_market_balance
 from simulator.models import DecisionState, MarketTick
 from simulator.portfolio import Portfolio
 from simulator.strategies import StrategyDecision
@@ -149,6 +149,7 @@ SUMMARY_COLUMNS = [
     "market_simulated_starting_balance",
     "master_balance_after_market",
     "withdrawn_after_market",
+    "drawdown_topped_up_after_market",
     "reserved_balance_after_market",
     "total_reward",
     "rows_written",
@@ -329,6 +330,20 @@ def parse_float(value):
 
 def blank_orderbook_depth():
     return {column: "" for column in ORDERBOOK_DEPTH_COLUMNS}
+
+
+def blank_orderbook_consumption():
+    return {
+        side: {"ask_usd": 0.0, "ask_size": 0.0, "bid_usd": 0.0, "bid_size": 0.0}
+        for side in ("up", "down")
+    }
+
+
+def subtract_depth_value(value, consumed):
+    parsed = parse_float(value)
+    if parsed is None:
+        return value
+    return max(0.0, parsed - float(consumed or 0.0))
 
 
 def normalize_book_levels(levels, *, reverse):
@@ -870,12 +885,16 @@ class StrategyRuntime:
     orders_placed: int = 0
     event_counts: dict = field(default_factory=lambda: {"buy_up": 0, "buy_down": 0, "sell_up": 0, "sell_down": 0})
     rows: list[dict] = field(default_factory=list)
+    master_balance_history: list[float] = field(default_factory=list)
+    cooldown_markets_remaining: int = 0
+    skip_current_market: bool = False
 
     def __post_init__(self):
         self.name = self.config.get("name") or self.config_path.stem
         self.master_balance = self.starting_balance
         self.master_balance_before_market = self.starting_balance
         self.market_starting_balance = self.starting_balance
+        self.master_balance_history = [self.starting_balance]
 
     def reset_for_market(self, market_starting_balance: float | None = None):
         self.master_balance_before_market = self.master_balance
@@ -949,6 +968,7 @@ class LiveStrategySuite:
             "markets_seen": 0,
             "orderbook_depth": blank_orderbook_depth(),
             "orderbook_hashes": {},
+            "paper_orderbook_consumed": blank_orderbook_consumption(),
         }
         self.current_market = None
         self.market_path = None
@@ -1013,14 +1033,63 @@ class LiveStrategySuite:
                 withdrawn += amount
         return withdrawn
 
+    def apply_reserve_top_up(self, runtime: StrategyRuntime) -> float:
+        if not self.compound_balance:
+            return 0.0
+        master, reserve, topped_up = apply_reserve_top_up(
+            runtime.master_balance,
+            runtime.reserved_balance,
+            self.balance_cfg,
+        )
+        if topped_up > 0:
+            runtime.master_balance = master
+            runtime.reserved_balance = reserve
+            print(
+                f"{runtime.name}: reserve top-up moved {topped_up:.2f} "
+                f"to master; master={master:.2f}, reserve={reserve:.2f}"
+            )
+        return topped_up
+
+    def apply_drawdown_reserve_top_up(self, runtime: StrategyRuntime) -> float:
+        if not self.compound_balance:
+            return 0.0
+        master, reserve, topped_up, triggered = apply_drawdown_reserve_top_up(
+            runtime.master_balance,
+            runtime.reserved_balance,
+            runtime.master_balance_history,
+            self.balance_cfg,
+        )
+        if not triggered:
+            return 0.0
+        runtime.master_balance = master
+        runtime.reserved_balance = reserve
+        runtime.master_balance_history = [master]
+        runtime.cooldown_markets_remaining = max(
+            runtime.cooldown_markets_remaining,
+            int(self.balance_cfg.get("reserve_drawdown_skip_markets", 0) or 0),
+        )
+        print(
+            f"{runtime.name}: drawdown reserve top-up moved {topped_up:.2f} "
+            f"to master; master={master:.2f}, reserve={reserve:.2f}, "
+            f"cooldown={runtime.cooldown_markets_remaining}"
+        )
+        return topped_up
+
     def begin_market(self, market):
         self.end_market()
         self.current_market = market
         for runtime in self.strategies:
-            market_starting_balance = runtime.starting_balance
-            if self.compound_balance:
-                effective_balance = resolve_effective_market_balance(runtime.master_balance, self.balance_cfg)
-                market_starting_balance = effective_balance if effective_balance is not None else runtime.master_balance
+            self.apply_reserve_top_up(runtime)
+            if runtime.cooldown_markets_remaining > 0:
+                runtime.skip_current_market = True
+                runtime.cooldown_markets_remaining -= 1
+                market_starting_balance = 0.0
+            else:
+                runtime.skip_current_market = False
+                market_starting_balance = runtime.starting_balance
+                if self.compound_balance:
+                    effective_balance = resolve_effective_market_balance(runtime.master_balance, self.balance_cfg)
+                    market_starting_balance = effective_balance if effective_balance is not None else runtime.master_balance
             runtime.reset_for_market(market_starting_balance)
 
         market_path = self.market_data_dir / f"{market['slug']}.csv"
@@ -1044,6 +1113,7 @@ class LiveStrategySuite:
             self.state["btc_chainlink"].clear()
             self.state["orderbook_depth"] = blank_orderbook_depth()
             self.state["orderbook_hashes"] = {}
+            self.state["paper_orderbook_consumed"] = blank_orderbook_consumption()
             self.state["markets_seen"] += 1
             self.latest_non_hold_actions.clear()
 
@@ -1156,9 +1226,12 @@ class LiveStrategySuite:
             final_balance = runtime.portfolio.resolve(final_outcome) if runtime.portfolio else runtime.market_starting_balance
             total_reward = final_balance - runtime.market_starting_balance
             withdrawn_after_market = 0.0
+            drawdown_topped_up_after_market = 0.0
             if self.compound_balance:
                 runtime.master_balance = max(0.0, runtime.master_balance_before_market + total_reward)
                 withdrawn_after_market = self.apply_virtual_withdrawals(runtime)
+                runtime.master_balance_history.append(runtime.master_balance)
+                drawdown_topped_up_after_market = self.apply_drawdown_reserve_top_up(runtime)
 
             for row in runtime.rows:
                 row["market_simulated_final_balance"] = final_balance
@@ -1199,6 +1272,7 @@ class LiveStrategySuite:
                 "market_simulated_starting_balance": runtime.market_starting_balance,
                 "master_balance_after_market": runtime.master_balance,
                 "withdrawn_after_market": withdrawn_after_market,
+                "drawdown_topped_up_after_market": drawdown_topped_up_after_market,
                 "reserved_balance_after_market": runtime.reserved_balance,
                 "total_reward": total_reward,
                 "rows_written": len(rows_to_write),
@@ -1275,6 +1349,9 @@ class LiveStrategySuite:
         with self.lock:
             previous_hashes = dict(self.state.get("orderbook_hashes") or {})
             next_hashes = dict(previous_hashes)
+            consumed = self.state.get("paper_orderbook_consumed") or blank_orderbook_consumption()
+            if self.args.execution_mode == "paper":
+                self.apply_paper_orderbook_consumption(depth, consumed)
             for side in ("up", "down"):
                 hash_column = f"{side}_book_hash"
                 changed_column = f"{side}_book_changed"
@@ -1287,6 +1364,60 @@ class LiveStrategySuite:
                     depth[changed_column] = ""
             self.state["orderbook_depth"] = depth
             self.state["orderbook_hashes"] = next_hashes
+
+    def apply_paper_orderbook_consumption(self, depth, consumed):
+        for side in ("up", "down"):
+            side_consumed = consumed.get(side) or {}
+            ask_usd = float(side_consumed.get("ask_usd") or 0.0)
+            ask_size = float(side_consumed.get("ask_size") or 0.0)
+            bid_usd = float(side_consumed.get("bid_usd") or 0.0)
+            bid_size = float(side_consumed.get("bid_size") or 0.0)
+
+            depth[f"{side}_ask_usd_total"] = subtract_depth_value(depth.get(f"{side}_ask_usd_total"), ask_usd)
+            depth[f"{side}_bid_usd_total"] = subtract_depth_value(depth.get(f"{side}_bid_usd_total"), bid_usd)
+            for cents in ORDERBOOK_DEPTH_WINDOWS_CENTS:
+                depth[f"{side}_ask_usd_within_{cents}c"] = subtract_depth_value(
+                    depth.get(f"{side}_ask_usd_within_{cents}c"),
+                    ask_usd,
+                )
+                depth[f"{side}_ask_size_within_{cents}c"] = subtract_depth_value(
+                    depth.get(f"{side}_ask_size_within_{cents}c"),
+                    ask_size,
+                )
+                depth[f"{side}_bid_usd_within_{cents}c"] = subtract_depth_value(
+                    depth.get(f"{side}_bid_usd_within_{cents}c"),
+                    bid_usd,
+                )
+                depth[f"{side}_bid_size_within_{cents}c"] = subtract_depth_value(
+                    depth.get(f"{side}_bid_size_within_{cents}c"),
+                    bid_size,
+                )
+
+    def consume_paper_orderbook(self, events, row_metrics):
+        if self.args.execution_mode != "paper" or not self.args.liquidity_aware_execution or not events:
+            return
+        consumed_delta = blank_orderbook_consumption()
+        for event in events:
+            side = str(event.side or "").lower()
+            if side not in consumed_delta:
+                continue
+            if event.action == "buy":
+                consumed_delta[side]["ask_usd"] += float(event.usd_amount)
+                consumed_delta[side]["ask_size"] += float(event.tokens)
+            elif event.action == "sell":
+                consumed_delta[side]["bid_usd"] += float(event.usd_amount)
+                consumed_delta[side]["bid_size"] += float(event.tokens)
+
+        with self.lock:
+            consumed = self.state.get("paper_orderbook_consumed") or blank_orderbook_consumption()
+            for side in ("up", "down"):
+                for key, value in consumed_delta[side].items():
+                    consumed[side][key] += value
+            self.state["paper_orderbook_consumed"] = consumed
+            current_depth = dict(self.state.get("orderbook_depth") or {})
+            self.apply_paper_orderbook_consumption(current_depth, consumed_delta)
+            self.state["orderbook_depth"] = current_depth
+        self.apply_paper_orderbook_consumption(row_metrics, consumed_delta)
 
     def append_market_row(self, row):
         if not self.market_path:
@@ -1337,7 +1468,9 @@ class LiveStrategySuite:
                 last_action=runtime.last_action,
                 orders_placed=runtime.orders_placed,
             )
-            if tick.seconds_left is not None and tick.seconds_left <= 0:
+            if runtime.skip_current_market:
+                decision = StrategyDecision("hold", "reserve drawdown cooldown")
+            elif tick.seconds_left is not None and tick.seconds_left <= 0:
                 decision = StrategyDecision("hold", "market closed")
             else:
                 decision = runtime.strategy.decide(state)
@@ -1485,6 +1618,7 @@ class LiveStrategySuite:
                 trajectory_row[column] = row.get(column, "")
             runtime.rows.append(trajectory_row)
             runtime.last_action = decision.action
+            self.consume_paper_orderbook(events, row)
 
             if decision.action != "hold" or events:
                 action_row = {

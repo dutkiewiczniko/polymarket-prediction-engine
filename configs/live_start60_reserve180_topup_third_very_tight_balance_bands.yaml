@@ -1,0 +1,50 @@
+# Start with 60 tradable master and 180 reserve.
+# Same reserve rescue rules as the standard live config, but with tighter
+# effective market balance bands so market sizing adjusts sooner.
+
+starting_balance: 60
+initial_reserved_balance: 180
+effective_market_balance_cap:
+
+reserve_top_up_enabled: true
+reserve_top_up_master_threshold: 1
+reserve_top_up_reserve_pct: 0.3333333333333333
+reserve_top_up_min_amount: 5
+
+reserve_drawdown_top_up_enabled: true
+reserve_drawdown_window_markets: 10
+reserve_drawdown_pct: 0.60
+reserve_drawdown_reserve_pct: 0.3333333333333333
+reserve_drawdown_min_amount: 5
+reserve_drawdown_skip_markets: 2
+
+withdrawal_pct: 0.10
+withdrawal_thresholds:
+  - 100
+  - 1000
+  - 10000
+  - 100000
+  - 1000000
+
+effective_market_balance_bands:
+  - [1, 8, 3]
+  - [8, 16, 5]
+  - [16, 31, 8]
+  - [31, 46, 10]
+  - [46, 68, 15]
+  - [68, 100, 20]
+  - [100, 150, 30]
+  - [150, 225, 45]
+  - [225, 340, 60]
+  - [340, 510, 90]
+  - [510, 760, 120]
+  - [760, 1150, 180]
+  - [1150, 1700, 240]
+  - [1700, 2600, 360]
+  - [2600, 3900, 480]
+  - [3900, 5900, 720]
+  - [5900, 8800, 960]
+  - [8800, 13200, 1440]
+  - [13200, null, 1920]
+
+effective_market_balance_default: 0

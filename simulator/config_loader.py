@@ -6,6 +6,7 @@ from simulator.strategies import (
     BaseStrategy,
     HoldStrategy,
     MomentumStrategy,
+    OverrideStrategy,
     RandomStrategy,
     RuleBasedStrategy,
     VotingEnsembleStrategy,
@@ -78,6 +79,21 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
             default_scale=float(params.get("default_scale", 0.75)),
             max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
             cooldown_ticks=int(params.get("cooldown_ticks", 0)),
+        )
+        strategy.name = cfg.get("name", strategy.name)
+        return strategy
+
+    if strategy_type == "override":
+        params = cfg.get("params", {})
+        override_cfg = load_yaml(params["override"]["config"])
+        base_cfg = load_yaml(params["base"]["config"])
+        override_strategy = build_strategy_from_config(override_cfg)
+        base_strategy = build_strategy_from_config(base_cfg)
+        strategy = OverrideStrategy(
+            override=override_strategy,
+            base=base_strategy,
+            override_name=params["override"].get("label") or override_cfg.get("name") or "override",
+            base_name=params["base"].get("label") or base_cfg.get("name") or "base",
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy

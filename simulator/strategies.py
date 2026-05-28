@@ -321,6 +321,43 @@ class VotingEnsembleStrategy(BaseStrategy):
         return f"{prefix}; {suffix}"
 
 
+class OverrideStrategy(BaseStrategy):
+    name = "override"
+
+    def __init__(
+        self,
+        override: BaseStrategy,
+        base: BaseStrategy,
+        override_name: str = "override",
+        base_name: str = "base",
+    ):
+        self.override = override
+        self.base = base
+        self.override_name = override_name
+        self.base_name = base_name
+
+    def decide(self, state: DecisionState) -> StrategyDecision:
+        override_decision = self.override.decide(state)
+        if override_decision.action != "hold":
+            return StrategyDecision(
+                action=override_decision.action,
+                reason=f"{self.override_name} override: {override_decision.reason}",
+                usd_amount=override_decision.usd_amount,
+            )
+
+        base_decision = self.base.decide(state)
+        if base_decision.action != "hold":
+            return StrategyDecision(
+                action=base_decision.action,
+                reason=f"{self.base_name}: {base_decision.reason}",
+                usd_amount=base_decision.usd_amount,
+            )
+        return StrategyDecision(
+            "hold",
+            f"{self.override_name}: {override_decision.reason}; {self.base_name}: {base_decision.reason}",
+        )
+
+
 def condition_matches(condition: dict[str, Any], metrics: dict[str, float | bool | None]) -> bool:
     metric_name = condition.get("metric")
     operator = str(condition.get("operator", "==")).lower().strip()
