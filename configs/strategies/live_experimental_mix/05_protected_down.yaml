@@ -1,0 +1,3 @@
+name: exp_05_protected_down
+type: strategy_ref
+config: configs/strategies/live_mix_orderbook_consumption/cheap_lottery_protected_down_bias.yaml

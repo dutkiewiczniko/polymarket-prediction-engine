@@ -1,4 +1,5 @@
 name: family_up_bias_chaser
+name: family_up_bias_chaser
 type: rule_based
 starting_balance: 100
 order_usd: 1

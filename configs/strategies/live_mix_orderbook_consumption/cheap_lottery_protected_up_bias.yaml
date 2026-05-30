@@ -1,0 +1,14 @@
+name: cheap_lottery_protected_up_bias
+type: override
+starting_balance: 100
+order_usd: 1
+
+params:
+  suppress_base_while_override_position: true
+  suppress_base_when_override_near_price: 0.05
+  override:
+    label: cheap_lottery
+    config: configs/strategies/live_mix_orderbook_consumption/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+  base:
+    label: up_bias_chaser
+    config: configs/strategies/live_mix_orderbook_consumption/up_bias_chaser_tp095_cheap0025_tok20.yaml

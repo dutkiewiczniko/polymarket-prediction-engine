@@ -321,6 +321,85 @@ class VotingEnsembleStrategy(BaseStrategy):
         return f"{prefix}; {suffix}"
 
 
+class OverrideStrategy(BaseStrategy):
+    name = "override"
+
+    def __init__(
+        self,
+        override: BaseStrategy,
+        base: BaseStrategy,
+        override_name: str = "override",
+        base_name: str = "base",
+        suppress_base_while_override_position: bool = False,
+        suppress_base_when_override_near_price: float | None = None,
+    ):
+        self.override = override
+        self.base = base
+        self.override_name = override_name
+        self.base_name = base_name
+        self.suppress_base_while_override_position = suppress_base_while_override_position
+        self.suppress_base_when_override_near_price = suppress_base_when_override_near_price
+        self._override_position_side: str | None = None
+
+    def decide(self, state: DecisionState) -> StrategyDecision:
+        self._refresh_override_position(state)
+        override_decision = self.override.decide(state)
+        if override_decision.action != "hold":
+            if override_decision.action == "buy_up":
+                self._override_position_side = "up"
+            elif override_decision.action == "buy_down":
+                self._override_position_side = "down"
+            return StrategyDecision(
+                action=override_decision.action,
+                reason=f"{self.override_name} override: {override_decision.reason}",
+                usd_amount=override_decision.usd_amount,
+            )
+
+        if self.suppress_base_while_override_position and self._override_position_side:
+            return StrategyDecision(
+                "hold",
+                f"{self.override_name} {_side_label(self._override_position_side)} position active; suppress {self.base_name}",
+            )
+
+        if self._near_override_price(state):
+            return StrategyDecision(
+                "hold",
+                f"{self.override_name} near cheap threshold; suppress {self.base_name}",
+            )
+
+        base_decision = self.base.decide(state)
+        if base_decision.action != "hold":
+            return StrategyDecision(
+                action=base_decision.action,
+                reason=f"{self.base_name}: {base_decision.reason}",
+                usd_amount=base_decision.usd_amount,
+            )
+        return StrategyDecision(
+            "hold",
+            f"{self.override_name}: {override_decision.reason}; {self.base_name}: {base_decision.reason}",
+        )
+
+    def _refresh_override_position(self, state: DecisionState) -> None:
+        if self._override_position_side == "up" and state.up_tokens <= 0:
+            self._override_position_side = None
+        elif self._override_position_side == "down" and state.down_tokens <= 0:
+            self._override_position_side = None
+
+    def _near_override_price(self, state: DecisionState) -> bool:
+        threshold = self.suppress_base_when_override_near_price
+        if threshold is None:
+            return False
+        tick = state.tick
+        return (
+            (tick.up_price is not None and tick.up_price <= threshold)
+            or (tick.down_price is not None and tick.down_price <= threshold)
+        )
+
+
+def _side_label(side: str) -> str:
+    return "UP" if side == "up" else "DOWN"
+
+
 def condition_matches(condition: dict[str, Any], metrics: dict[str, float | bool | None]) -> bool:
     metric_name = condition.get("metric")
     operator = str(condition.get("operator", "==")).lower().strip()

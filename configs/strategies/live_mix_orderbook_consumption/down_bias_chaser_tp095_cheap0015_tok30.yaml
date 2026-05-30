@@ -1,4 +1,4 @@
-name: family_up_bias_chaser
+name: family_down_bias_chaser_cheap0015_tok30
 type: rule_based
 starting_balance: 100
 order_usd: 1
@@ -29,31 +29,31 @@ params:
           value: 0.95
       action: sell_down
 
-    - name: cheap_up_up_bias_lottery
+    - name: cheap_up_optional_lottery
       all:
         - metric: up_price
           operator: "<="
-          value: 0.025
+          value: 0.015
       action: buy_up
-      token_amount: 50
+      token_amount: 30
 
-    - name: cheap_down_optional_lottery
+    - name: cheap_down_down_bias_lottery
       all:
         - metric: down_price
           operator: "<="
-          value: 0.025
+          value: 0.015
       action: buy_down
-      token_amount: 20
+      token_amount: 30
 
-    - name: btc_above_price_to_beat_buy_up
+    - name: btc_below_price_to_beat_buy_down
       all:
-        - metric: btc_above_price_to_beat
+        - metric: btc_below_price_to_beat
           operator: "is"
           value: true
-        - metric: up_price
+        - metric: down_price
           operator: "<="
           value: 0.85
-      action: buy_up
+      action: buy_down
       token_amount: 30
 
     - name: up_price_momentum_chase_buy_up
@@ -76,4 +76,4 @@ params:
           operator: "<="
           value: 0.85
       action: buy_down
-      token_amount: 20
+      token_amount: 30

@@ -1,4 +1,4 @@
-name: family_up_bias_chaser
+name: up_bias_drop_exit_px070_dist5
 type: rule_based
 starting_balance: 100
 order_usd: 1
@@ -9,6 +9,38 @@ params:
   cooldown_ticks: 3
 
   rules:
+    - name: exit_up_drop_near_beat
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.7
+        - metric: up_price_pct_change
+          operator: "<="
+          value: -3
+        - metric: abs_btc_distance_to_price_to_beat
+          operator: "<="
+          value: 5
+      action: sell_up
+
+    - name: exit_down_drop_near_beat
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.7
+        - metric: down_price_pct_change
+          operator: "<="
+          value: -3
+        - metric: abs_btc_distance_to_price_to_beat
+          operator: "<="
+          value: 5
+      action: sell_down
+
     - name: take_profit_up_position
       all:
         - metric: has_up_position
@@ -35,7 +67,7 @@ params:
           operator: "<="
           value: 0.025
       action: buy_up
-      token_amount: 50
+      token_amount: 30
 
     - name: cheap_down_optional_lottery
       all:

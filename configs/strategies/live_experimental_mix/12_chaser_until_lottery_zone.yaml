@@ -1,4 +1,4 @@
-name: family_up_bias_chaser
+name: exp_12_chaser_until_lottery_zone
 type: rule_based
 starting_balance: 100
 order_usd: 1
@@ -9,6 +9,16 @@ params:
   cooldown_ticks: 3
 
   rules:
+    - name: suppress_chaser_near_lottery_zone
+      any:
+        - metric: up_price
+          operator: "<="
+          value: 0.05
+        - metric: down_price
+          operator: "<="
+          value: 0.05
+      action: hold
+
     - name: take_profit_up_position
       all:
         - metric: has_up_position
@@ -28,22 +38,6 @@ params:
           operator: ">="
           value: 0.95
       action: sell_down
-
-    - name: cheap_up_up_bias_lottery
-      all:
-        - metric: up_price
-          operator: "<="
-          value: 0.025
-      action: buy_up
-      token_amount: 50
-
-    - name: cheap_down_optional_lottery
-      all:
-        - metric: down_price
-          operator: "<="
-          value: 0.025
-      action: buy_down
-      token_amount: 20
 
     - name: btc_above_price_to_beat_buy_up
       all:

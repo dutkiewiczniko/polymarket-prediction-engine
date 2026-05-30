@@ -77,6 +77,74 @@ def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> 
     return min(master_balance, apply_cap(float(batch_cfg.get("starting_balance", 100.0))))
 
 
+def apply_reserve_top_up(master_balance: float, reserve: float, cfg: dict) -> tuple[float, float, float]:
+    if not cfg.get("reserve_top_up_enabled", False):
+        return master_balance, reserve, 0.0
+    if reserve <= 0:
+        return master_balance, reserve, 0.0
+
+    threshold = float(cfg.get("reserve_top_up_master_threshold", 1.0) or 0.0)
+    if master_balance >= threshold:
+        return master_balance, reserve, 0.0
+
+    pct = float(cfg.get("reserve_top_up_reserve_pct", 0.0) or 0.0)
+    fixed_amount = float(cfg.get("reserve_top_up_amount", 0.0) or 0.0)
+    min_amount = float(cfg.get("reserve_top_up_min_amount", 0.0) or 0.0)
+    max_amount = cfg.get("reserve_top_up_max_amount")
+
+    amount = fixed_amount if fixed_amount > 0 else reserve * pct
+    if min_amount > 0:
+        amount = max(amount, min_amount)
+    if max_amount is not None:
+        amount = min(amount, float(max_amount))
+    amount = min(max(0.0, amount), reserve)
+    if amount <= 0:
+        return master_balance, reserve, 0.0
+    return master_balance + amount, reserve - amount, amount
+
+
+def apply_drawdown_reserve_top_up(
+    master_balance: float,
+    reserve: float,
+    balance_history: list[float],
+    cfg: dict,
+) -> tuple[float, float, float, bool]:
+    if not cfg.get("reserve_drawdown_top_up_enabled", False):
+        return master_balance, reserve, 0.0, False
+    if reserve <= 0:
+        return master_balance, reserve, 0.0, False
+
+    window = int(cfg.get("reserve_drawdown_window_markets", 10) or 0)
+    drawdown_pct = float(cfg.get("reserve_drawdown_pct", 0.0) or 0.0)
+    if window <= 0 or drawdown_pct <= 0:
+        return master_balance, reserve, 0.0, False
+    if len(balance_history) < 2:
+        return master_balance, reserve, 0.0, False
+
+    recent_history = [float(value) for value in balance_history[-window - 1:]]
+    recent_reference = max(recent_history[:-1])
+    if recent_reference <= 0:
+        return master_balance, reserve, 0.0, False
+    drawdown = (recent_reference - master_balance) / recent_reference
+    if drawdown < drawdown_pct:
+        return master_balance, reserve, 0.0, False
+
+    pct = float(cfg.get("reserve_drawdown_reserve_pct", 0.0) or 0.0)
+    fixed_amount = float(cfg.get("reserve_drawdown_amount", 0.0) or 0.0)
+    min_amount = float(cfg.get("reserve_drawdown_min_amount", 0.0) or 0.0)
+    max_amount = cfg.get("reserve_drawdown_max_amount")
+
+    amount = fixed_amount if fixed_amount > 0 else reserve * pct
+    if min_amount > 0:
+        amount = max(amount, min_amount)
+    if max_amount is not None:
+        amount = min(amount, float(max_amount))
+    amount = min(max(0.0, amount), reserve)
+    if amount <= 0:
+        return master_balance, reserve, 0.0, False
+    return master_balance + amount, reserve - amount, amount, True
+
+
 def expand_strategy_runs(batch_cfg: dict) -> list[dict]:
     """Expand strategy entries into individual runnable configs.
 
