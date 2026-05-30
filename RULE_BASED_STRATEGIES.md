@@ -122,3 +122,13 @@ Use `any` when one rule should fire if at least one condition matches.
 `cooldown_ticks` prevents repeated buying every tick after a rule fires.
 
 `default_usd_amount` is used when a rule does not define `usd_amount`.
+
+Buy rules can also define size in strategy terms:
+
+- `usd_amount`: fixed USD notional.
+- `balance_pct`: USD notional as a fraction of the market starting balance.
+- `token_amount`: desired number of outcome tokens, converted to USD using the current side price.
+- `balance_scaled_token_amount`: token amount scaled by `market_start_balance / 100`.
+
+If more than one sizing field is present, later fields in that list override earlier
+ones. For example, `token_amount` overrides `balance_pct`.

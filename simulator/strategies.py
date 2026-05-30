@@ -138,6 +138,12 @@ class RuleBasedStrategy(BaseStrategy):
                 if action in {"buy_up", "buy_down"} and self.max_orders is not None and state.orders_placed >= self.max_orders:
                     return StrategyDecision("hold", "max buy orders reached")
                 usd_amount = rule.get("usd_amount", self.default_usd_amount)
+                if action in {"buy_up", "buy_down"} and rule.get("balance_pct") is not None:
+                    balance_pct = as_float(rule.get("balance_pct"))
+                    scale_balance = as_float(metrics.get("market_start_balance"))
+                    if balance_pct is None or scale_balance is None:
+                        return StrategyDecision("hold", "cannot size balance_pct order")
+                    usd_amount = scale_balance * balance_pct
                 if action in {"buy_up", "buy_down"} and rule.get("token_amount") is not None:
                     price_metric = "up_price" if action == "buy_up" else "down_price"
                     price = as_float(metrics.get(price_metric))
