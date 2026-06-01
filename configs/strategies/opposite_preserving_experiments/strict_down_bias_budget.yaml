@@ -1,0 +1,80 @@
+name: opp_preserve_strict_down_bias_budget
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 45
+  max_market_spend_usd: 16
+  cooldown_ticks: 6
+  sell_opposite_first: false
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: very_cheap_down_tail
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.015
+      action: buy_down
+      token_amount: 45
+      cooldown_ticks: 4
+
+    - name: very_cheap_up_small_tail
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.015
+      action: buy_up
+      token_amount: 12
+      cooldown_ticks: 6
+
+    - name: strong_down_signal
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.70
+        - metric: seconds_left
+          operator: "<="
+          value: 180
+      action: buy_down
+      token_amount: 24
+
+    - name: late_down_tail
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: seconds_left
+          operator: "<="
+          value: 45
+        - metric: down_price
+          operator: "<="
+          value: 0.08
+      action: buy_down
+      token_amount: 20
+      cooldown_ticks: 10
+

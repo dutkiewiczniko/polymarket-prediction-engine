@@ -61,6 +61,12 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
             max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
             cooldown_ticks=int(params.get("cooldown_ticks", 0)),
             sell_opposite_first=as_bool(params.get("sell_opposite_first", True)),
+            max_market_spend_usd=(
+                float(params["max_market_spend_usd"])
+                if params.get("max_market_spend_usd") is not None
+                else None
+            ),
+            combine_matching_buys=as_bool(params.get("combine_matching_buys", False)),
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy

@@ -1,0 +1,49 @@
+batch_id: guarded_combiner_candidates
+markets_folder: simulator_ready_markets_liquidity_all_20260519
+market_pattern: btc-updown-5m-*.csv
+output_root: runs
+market_offset: 0
+max_markets: 25
+write_trajectories: true
+
+starting_balance: 100
+order_usd: 1
+compound_balance: false
+
+liquidity_aware_execution: true
+liquidity_depth_window_cents: 2
+liquidity_fill_fraction: 1.0
+liquidity_missing_depth_policy: skip
+min_order_usd: 1
+
+final_outcome:
+
+strategies:
+  - config: configs/strategies/combined_accumulator_experiments/cheap_priority_down_chaser_guarded.yaml
+    count: 1
+    label: cheap_priority_down_chaser_guarded
+
+  - config: configs/strategies/combined_accumulator_experiments/cheap_priority_dual_chaser_guarded.yaml
+    count: 1
+    label: cheap_priority_dual_chaser_guarded
+
+  - config: configs/strategies/live_mix_orderbook_consumption/cheap_lottery_override_down_bias.yaml
+    count: 1
+    label: baseline_override_down
+
+  - config: configs/strategies/live_mix_orderbook_consumption/cheap_lottery_protected_down_bias.yaml
+    count: 1
+    label: baseline_protected_down
+
+  - config: configs/strategies/live_mix_orderbook_consumption/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: baseline_cheap_lottery_only
+
+  - config: configs/strategies/live_mix_orderbook_consumption/down_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: baseline_down_bias_chaser
+
+  - config: configs/strategies/opposite_preserving_experiments/baseline_up_bias_chaser.yaml
+    count: 1
+    label: baseline_up_bias_chaser
+

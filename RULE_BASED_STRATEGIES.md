@@ -119,6 +119,16 @@ Use `any` when one rule should fire if at least one condition matches.
 
 `max_orders` limits total executed trade events for one market replay.
 
+`max_market_spend_usd` caps total buy notional for one market. If a matching
+buy would exceed the remaining cap, the order is reduced to the remaining
+budget. Once the cap is exhausted, further buys hold with reason
+`max market spend reached`.
+
+Buy rules can bypass `max_orders` and `max_market_spend_usd` when they are
+explicitly marked as lottery/risk overrides. Use `risk_override_max_price` to
+allow the override only while the side price is at or below that threshold, or
+`ignore_risk_limits: true` to bypass those limits unconditionally.
+
 `cooldown_ticks` prevents repeated buying every tick after a rule fires.
 
 `default_usd_amount` is used when a rule does not define `usd_amount`.

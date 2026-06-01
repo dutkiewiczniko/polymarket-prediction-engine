@@ -1,0 +1,119 @@
+name: opp_preserve_down_bias_lottery_overlay
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 90
+  max_market_spend_usd: 28
+  cooldown_ticks: 3
+  sell_opposite_first: false
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: deep_cheap_down_bias_lottery
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+      action: buy_down
+      token_amount: 60
+      cooldown_ticks: 2
+
+    - name: deep_cheap_up_hedge_lottery
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+      action: buy_up
+      token_amount: 25
+      cooldown_ticks: 3
+
+    - name: cheap_down_bias_lottery
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.025
+      action: buy_down
+      token_amount: 35
+
+    - name: cheap_up_hedge_lottery
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.025
+      action: buy_up
+      token_amount: 15
+
+    - name: btc_below_ptb_down_entry
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.82
+      action: buy_down
+      token_amount: 25
+
+    - name: btc_below_ptb_late_down_entry
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: seconds_left
+          operator: "<="
+          value: 75
+        - metric: down_price
+          operator: "<="
+          value: 0.75
+      action: buy_down
+      token_amount: 35
+      cooldown_ticks: 5
+
+    - name: down_price_momentum_chase
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 28
+
+    - name: confirmed_up_hedge_chase
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 4
+        - metric: up_price
+          operator: "<="
+          value: 0.75
+      action: buy_up
+      token_amount: 12
+      cooldown_ticks: 6
+

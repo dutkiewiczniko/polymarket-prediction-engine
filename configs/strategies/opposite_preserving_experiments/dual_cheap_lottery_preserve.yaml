@@ -1,0 +1,91 @@
+name: opp_preserve_dual_cheap_lottery
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 80
+  max_market_spend_usd: 18
+  cooldown_ticks: 4
+  sell_opposite_first: false
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: deep_cheap_up_lottery_keep_down
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.01
+      action: buy_up
+      token_amount: 40
+      cooldown_ticks: 3
+
+    - name: deep_cheap_down_lottery_keep_up
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.01
+      action: buy_down
+      token_amount: 40
+      cooldown_ticks: 3
+
+    - name: cheap_up_lottery_keep_down
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.025
+      action: buy_up
+      token_amount: 25
+
+    - name: cheap_down_lottery_keep_up
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.025
+      action: buy_down
+      token_amount: 25
+
+    - name: final_minute_up_tail_keep_down
+      all:
+        - metric: seconds_left
+          operator: "<="
+          value: 60
+        - metric: up_price
+          operator: "<="
+          value: 0.05
+      action: buy_up
+      token_amount: 12
+      cooldown_ticks: 8
+
+    - name: final_minute_down_tail_keep_up
+      all:
+        - metric: seconds_left
+          operator: "<="
+          value: 60
+        - metric: down_price
+          operator: "<="
+          value: 0.05
+      action: buy_down
+      token_amount: 12
+      cooldown_ticks: 8
+

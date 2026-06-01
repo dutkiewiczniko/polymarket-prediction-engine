@@ -112,12 +112,16 @@ class RuleBasedStrategy(BaseStrategy):
         max_orders: int | None = None,
         cooldown_ticks: int = 0,
         sell_opposite_first: bool = True,
+        max_market_spend_usd: float | None = None,
+        combine_matching_buys: bool = False,
     ):
         self.rules = rules
         self.default_usd_amount = default_usd_amount
         self.max_orders = max_orders
         self.cooldown_ticks = cooldown_ticks
         self.sell_opposite_first = sell_opposite_first
+        self.max_market_spend_usd = max_market_spend_usd
+        self.combine_matching_buys = combine_matching_buys
         self._last_up_price: float | None = None
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
@@ -132,47 +136,45 @@ class RuleBasedStrategy(BaseStrategy):
             self._remember(metrics)
             return StrategyDecision("hold", "cooldown")
 
-        for rule in self.rules:
+        for rule_index, rule in enumerate(self.rules):
             if self._rule_matches(rule, metrics):
                 self._active_cooldown_ticks = int(rule.get("cooldown_ticks", self.cooldown_ticks))
                 self._ticks_since_trade = 0
                 self._remember(metrics)
                 action = str(rule.get("action", "hold")).lower().strip()
-                if action in {"buy_up", "buy_down"} and self.max_orders is not None and state.orders_placed >= self.max_orders:
+                risk_override = self._rule_risk_override(rule, action, metrics)
+                if (
+                    action in {"buy_up", "buy_down"}
+                    and self.max_orders is not None
+                    and state.orders_placed >= self.max_orders
+                    and not risk_override
+                ):
                     return StrategyDecision("hold", "max buy orders reached")
-                usd_amount = rule.get("usd_amount", self.default_usd_amount)
-                if action in {"buy_up", "buy_down"} and rule.get("balance_pct") is not None:
-                    balance_pct = as_float(rule.get("balance_pct"))
-                    scale_balance = as_float(metrics.get("market_start_balance"))
-                    if balance_pct is None or scale_balance is None:
-                        return StrategyDecision("hold", "cannot size balance_pct order")
-                    usd_amount = scale_balance * balance_pct
-                if action in {"buy_up", "buy_down"} and rule.get("token_amount") is not None:
-                    price_metric = "up_price" if action == "buy_up" else "down_price"
-                    price = as_float(metrics.get(price_metric))
-                    token_amount = as_float(rule.get("token_amount"))
-                    if price is None or token_amount is None:
-                        return StrategyDecision("hold", "cannot size token_amount order")
-                    usd_amount = token_amount * price
-                if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
-                    price_metric = "up_price" if action == "buy_up" else "down_price"
-                    price = as_float(metrics.get(price_metric))
-                    token_basis = as_float(rule.get("balance_scaled_token_amount"))
-                    scale_balance = as_float(metrics.get("market_start_balance"))
-                    if price is None or token_basis is None or scale_balance is None:
-                        return StrategyDecision("hold", "cannot size balance_scaled_token_amount order")
-                    if rule.get("balance_scale_cap") is not None:
-                        cap = as_float(rule.get("balance_scale_cap"))
-                        if cap is None:
-                            return StrategyDecision("hold", "invalid balance_scale_cap")
-                        scale_balance = min(scale_balance, cap)
-                    token_amount = token_basis * scale_balance / 100.0
-                    usd_amount = token_amount * price
+                usd_amount = self._rule_usd_amount(rule, action, metrics)
+                if isinstance(usd_amount, StrategyDecision):
+                    return usd_amount
+                reason = str(rule.get("name", f"rule matched: {action}"))
+                sell_opposite_first = as_bool(rule.get("sell_opposite_first", self.sell_opposite_first))
+                if self.combine_matching_buys and action in {"buy_up", "buy_down"}:
+                    extra_amount, extra_reasons, extra_sell_opposite_first = self._combined_same_side_buys(
+                        rules=self.rules[rule_index + 1:],
+                        action=action,
+                        metrics=metrics,
+                    )
+                    usd_amount += extra_amount
+                    if extra_reasons:
+                        reason = " + ".join([reason, *extra_reasons])
+                    sell_opposite_first = sell_opposite_first and extra_sell_opposite_first
+                if action in {"buy_up", "buy_down"} and self.max_market_spend_usd is not None and not risk_override:
+                    remaining_spend = self.max_market_spend_usd - state.market_spend_used
+                    if remaining_spend <= 0:
+                        return StrategyDecision("hold", "max market spend reached")
+                    usd_amount = min(float(usd_amount), remaining_spend)
                 return StrategyDecision(
                     action=action,
-                    reason=str(rule.get("name", f"rule matched: {action}")),
+                    reason=reason,
                     usd_amount=float(usd_amount) if usd_amount is not None else None,
-                    sell_opposite_first=as_bool(rule.get("sell_opposite_first", self.sell_opposite_first)),
+                    sell_opposite_first=sell_opposite_first,
                 )
 
         self._ticks_since_trade += 1
@@ -225,6 +227,84 @@ class RuleBasedStrategy(BaseStrategy):
         self._last_up_price = as_float(metrics.get("up_price"))
         self._last_down_price = as_float(metrics.get("down_price"))
         self._last_btc = as_float(metrics.get("btc_price"))
+
+    def _rule_usd_amount(
+        self,
+        rule: dict[str, Any],
+        action: str,
+        metrics: dict[str, float | bool | None],
+    ) -> float | StrategyDecision:
+        usd_amount = rule.get("usd_amount", self.default_usd_amount)
+        if action in {"buy_up", "buy_down"} and rule.get("balance_pct") is not None:
+            balance_pct = as_float(rule.get("balance_pct"))
+            scale_balance = as_float(metrics.get("market_start_balance"))
+            if balance_pct is None or scale_balance is None:
+                return StrategyDecision("hold", "cannot size balance_pct order")
+            usd_amount = scale_balance * balance_pct
+        if action in {"buy_up", "buy_down"} and rule.get("token_amount") is not None:
+            price_metric = "up_price" if action == "buy_up" else "down_price"
+            price = as_float(metrics.get(price_metric))
+            token_amount = as_float(rule.get("token_amount"))
+            if price is None or token_amount is None:
+                return StrategyDecision("hold", "cannot size token_amount order")
+            usd_amount = token_amount * price
+        if action in {"buy_up", "buy_down"} and rule.get("balance_scaled_token_amount") is not None:
+            price_metric = "up_price" if action == "buy_up" else "down_price"
+            price = as_float(metrics.get(price_metric))
+            token_basis = as_float(rule.get("balance_scaled_token_amount"))
+            scale_balance = as_float(metrics.get("market_start_balance"))
+            if price is None or token_basis is None or scale_balance is None:
+                return StrategyDecision("hold", "cannot size balance_scaled_token_amount order")
+            if rule.get("balance_scale_cap") is not None:
+                cap = as_float(rule.get("balance_scale_cap"))
+                if cap is None:
+                    return StrategyDecision("hold", "invalid balance_scale_cap")
+                scale_balance = min(scale_balance, cap)
+            token_amount = token_basis * scale_balance / 100.0
+            usd_amount = token_amount * price
+        return float(usd_amount)
+
+    def _rule_risk_override(
+        self,
+        rule: dict[str, Any],
+        action: str,
+        metrics: dict[str, float | bool | None],
+    ) -> bool:
+        if action not in {"buy_up", "buy_down"}:
+            return False
+        if as_bool(rule.get("ignore_risk_limits", False)):
+            return True
+        max_price = as_float(rule.get("risk_override_max_price"))
+        if max_price is None:
+            return False
+        price_metric = "up_price" if action == "buy_up" else "down_price"
+        price = as_float(metrics.get(price_metric))
+        return price is not None and price <= max_price
+
+    def _combined_same_side_buys(
+        self,
+        rules: list[dict[str, Any]],
+        action: str,
+        metrics: dict[str, float | bool | None],
+    ) -> tuple[float, list[str], bool]:
+        total = 0.0
+        reasons = []
+        sell_opposite_first = True
+        for rule in rules:
+            rule_action = str(rule.get("action", "hold")).lower().strip()
+            if rule_action != action:
+                continue
+            if not self._rule_matches(rule, metrics):
+                continue
+            usd_amount = self._rule_usd_amount(rule, rule_action, metrics)
+            if isinstance(usd_amount, StrategyDecision):
+                continue
+            total += usd_amount
+            reasons.append(str(rule.get("name", f"rule matched: {rule_action}")))
+            sell_opposite_first = sell_opposite_first and as_bool(
+                rule.get("sell_opposite_first", self.sell_opposite_first)
+            )
+        return total, reasons, sell_opposite_first
 
     def _rule_matches(self, rule: dict[str, Any], metrics: dict[str, float | bool | None]) -> bool:
         if "all" in rule:

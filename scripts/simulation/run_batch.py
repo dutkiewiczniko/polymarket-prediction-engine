@@ -22,6 +22,7 @@ def parse_args():
     parser.add_argument("--output-root", help="Root folder where batch run folders are written.")
     parser.add_argument("--batch-id", help="Name for this run under output-root.")
     parser.add_argument("--max-markets", type=int, help="Limit how many market CSVs to simulate.")
+    parser.add_argument("--market-offset", type=int, help="Skip this many sorted market CSVs before applying --max-markets.")
     parser.add_argument(
         "--compound-balance",
         action="store_true",
@@ -90,6 +91,7 @@ def main():
     output_root = args.output_root
     batch_id = args.batch_id
     max_markets = args.max_markets
+    market_offset = args.market_offset
     compound_balance = None
     if args.compound_balance:
         compound_balance = True
@@ -104,6 +106,7 @@ def main():
         )
         output_root = prompt_value("Output root folder", output_root or config.get("output_root", "runs"))
         batch_id = prompt_value("Batch id", batch_id or config.get("batch_id", "batch_test"))
+        market_offset = prompt_optional_int("Market offset", market_offset or config.get("market_offset", 0))
         max_markets = prompt_optional_int("Max markets, blank for all", max_markets or config.get("max_markets"))
         compound_balance = prompt_bool(
             "Compound balance across markets per strategy",
@@ -117,6 +120,7 @@ def main():
         output_root=output_root,
         batch_id=batch_id,
         max_markets=max_markets,
+        market_offset=market_offset,
         compound_balance=compound_balance,
     )
     run_folder = Path(summary_path).parent
