@@ -105,6 +105,7 @@ TRAJECTORY_COLUMNS = [
     "reason",
     "usd_amount",
     "executed_usd_amount",
+    "sell_opposite_first",
     "min_order_usd",
     "min_order_sizing_floor_applied",
     "execution_up_price",
@@ -1516,6 +1517,11 @@ class LiveStrategySuite:
             else:
                 execution_up_price = row["up_price"]
                 execution_down_price = row["down_price"]
+            sell_opposite_first = (
+                decision.sell_opposite_first
+                if decision.sell_opposite_first is not None
+                else True
+            )
             spend_before = runtime.market_spend_used
             events = execute_action(
                 portfolio=runtime.portfolio,
@@ -1524,6 +1530,7 @@ class LiveStrategySuite:
                 up_price=execution_up_price,
                 down_price=execution_down_price,
                 usd_amount=execution_usd_amount,
+                sell_opposite_first=sell_opposite_first,
                 max_buy_usd=max_buy_usd,
                 max_sell_tokens=max_sell_tokens,
                 min_order_usd=self.args.min_order_usd,
@@ -1589,6 +1596,7 @@ class LiveStrategySuite:
                 "reason": decision.reason,
                 "usd_amount": usd_amount,
                 "executed_usd_amount": execution_usd_amount,
+                "sell_opposite_first": sell_opposite_first,
                 "min_order_usd": self.args.min_order_usd,
                 "min_order_sizing_floor_applied": sizing_floor_applied,
                 "execution_up_price": execution_up_price,

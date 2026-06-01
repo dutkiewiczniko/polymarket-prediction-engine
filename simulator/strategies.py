@@ -11,6 +11,7 @@ class StrategyDecision:
     action: str
     reason: str = ""
     usd_amount: float | None = None
+    sell_opposite_first: bool | None = None
 
 
 class BaseStrategy:
@@ -110,11 +111,13 @@ class RuleBasedStrategy(BaseStrategy):
         default_usd_amount: float = 1.0,
         max_orders: int | None = None,
         cooldown_ticks: int = 0,
+        sell_opposite_first: bool = True,
     ):
         self.rules = rules
         self.default_usd_amount = default_usd_amount
         self.max_orders = max_orders
         self.cooldown_ticks = cooldown_ticks
+        self.sell_opposite_first = sell_opposite_first
         self._last_up_price: float | None = None
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
@@ -169,6 +172,7 @@ class RuleBasedStrategy(BaseStrategy):
                     action=action,
                     reason=str(rule.get("name", f"rule matched: {action}")),
                     usd_amount=float(usd_amount) if usd_amount is not None else None,
+                    sell_opposite_first=as_bool(rule.get("sell_opposite_first", self.sell_opposite_first)),
                 )
 
         self._ticks_since_trade += 1
@@ -289,9 +293,15 @@ class VotingEnsembleStrategy(BaseStrategy):
             if decision.usd_amount is not None and decision.usd_amount > 0
         ]
         usd_amount = min(sized_votes) * scale if sized_votes else None
+        sell_opposite_first = not any(decision.sell_opposite_first is False for _, decision in votes)
         self._ticks_since_trade = 0
         voters = ",".join(name for name, _ in votes)
-        return StrategyDecision(action, f"ensemble {action} votes={len(votes)} voters={voters}", usd_amount=usd_amount)
+        return StrategyDecision(
+            action,
+            f"ensemble {action} votes={len(votes)} voters={voters}",
+            usd_amount=usd_amount,
+            sell_opposite_first=sell_opposite_first,
+        )
 
     def _choose_side(
         self,
@@ -359,6 +369,7 @@ class OverrideStrategy(BaseStrategy):
                 action=override_decision.action,
                 reason=f"{self.override_name} override: {override_decision.reason}",
                 usd_amount=override_decision.usd_amount,
+                sell_opposite_first=override_decision.sell_opposite_first,
             )
 
         if self.suppress_base_while_override_position and self._override_position_side:
@@ -379,6 +390,7 @@ class OverrideStrategy(BaseStrategy):
                 action=base_decision.action,
                 reason=f"{self.base_name}: {base_decision.reason}",
                 usd_amount=base_decision.usd_amount,
+                sell_opposite_first=base_decision.sell_opposite_first,
             )
         return StrategyDecision(
             "hold",
@@ -447,6 +459,18 @@ def as_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.lower().strip()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off"}:
+            return False
+    return bool(value)
 
 
 def pct_change(current: float | None, previous: float | None) -> float | None:

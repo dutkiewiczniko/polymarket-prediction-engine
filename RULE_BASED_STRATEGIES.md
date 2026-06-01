@@ -123,6 +123,25 @@ Use `any` when one rule should fire if at least one condition matches.
 
 `default_usd_amount` is used when a rule does not define `usd_amount`.
 
+`sell_opposite_first` controls whether a buy closes the existing opposite-side
+position before opening the new position. It defaults to `true` to preserve
+existing behavior. Set it at `params` level for the whole rule strategy, or on
+an individual buy rule:
+
+```yaml
+params:
+  sell_opposite_first: false
+  rules:
+    - name: cheap_down_lottery_keep_up_ticket
+      when:
+        metric: down_price
+        operator: "<="
+        value: 0.025
+      action: buy_down
+      token_amount: 25
+      sell_opposite_first: false
+```
+
 Buy rules can also define size in strategy terms:
 
 - `usd_amount`: fixed USD notional.

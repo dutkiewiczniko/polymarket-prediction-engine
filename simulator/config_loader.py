@@ -10,6 +10,7 @@ from simulator.strategies import (
     RandomStrategy,
     RuleBasedStrategy,
     VotingEnsembleStrategy,
+    as_bool,
 )
 
 
@@ -59,6 +60,7 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
             default_usd_amount=float(params.get("default_usd_amount", cfg.get("order_usd", 1.0))),
             max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
             cooldown_ticks=int(params.get("cooldown_ticks", 0)),
+            sell_opposite_first=as_bool(params.get("sell_opposite_first", True)),
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy
