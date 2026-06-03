@@ -1,0 +1,3 @@
+name: cheap_priority_dual_chaser_guarded
+type: strategy_ref
+config: configs/strategies/combined_accumulator_experiments/cheap_priority_dual_chaser_guarded.yaml
