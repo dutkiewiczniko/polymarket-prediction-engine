@@ -186,6 +186,11 @@ def run_simulation(
         else:
             execution_up_price = tick.up_price
             execution_down_price = tick.down_price
+        sell_opposite_first = (
+            decision.sell_opposite_first
+            if decision.sell_opposite_first is not None
+            else True
+        )
         events = execute_action(
             portfolio=portfolio,
             action=decision.action,
@@ -193,6 +198,7 @@ def run_simulation(
             up_price=execution_up_price,
             down_price=execution_down_price,
             usd_amount=execution_usd_amount,
+            sell_opposite_first=sell_opposite_first,
             max_buy_usd=max_buy_usd,
             max_sell_tokens=max_sell_tokens,
             min_order_usd=min_order_usd,
@@ -223,6 +229,7 @@ def run_simulation(
             "reason": decision.reason,
             "usd_amount": decision_usd_amount,
             "executed_usd_amount": execution_usd_amount,
+            "sell_opposite_first": sell_opposite_first,
             "min_order_usd": min_order_usd,
             "min_order_sizing_floor_applied": sizing_floor_applied,
             "execution_up_price": execution_up_price,

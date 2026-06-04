@@ -119,6 +119,45 @@ Use `any` when one rule should fire if at least one condition matches.
 
 `max_orders` limits total executed trade events for one market replay.
 
+`max_market_spend_usd` caps total buy notional for one market. If a matching
+buy would exceed the remaining cap, the order is reduced to the remaining
+budget. Once the cap is exhausted, further buys hold with reason
+`max market spend reached`.
+
+Buy rules can bypass `max_orders` and `max_market_spend_usd` when they are
+explicitly marked as lottery/risk overrides. Use `risk_override_max_price` to
+allow the override only while the side price is at or below that threshold, or
+`ignore_risk_limits: true` to bypass those limits unconditionally.
+
 `cooldown_ticks` prevents repeated buying every tick after a rule fires.
 
 `default_usd_amount` is used when a rule does not define `usd_amount`.
+
+`sell_opposite_first` controls whether a buy closes the existing opposite-side
+position before opening the new position. It defaults to `true` to preserve
+existing behavior. Set it at `params` level for the whole rule strategy, or on
+an individual buy rule:
+
+```yaml
+params:
+  sell_opposite_first: false
+  rules:
+    - name: cheap_down_lottery_keep_up_ticket
+      when:
+        metric: down_price
+        operator: "<="
+        value: 0.025
+      action: buy_down
+      token_amount: 25
+      sell_opposite_first: false
+```
+
+Buy rules can also define size in strategy terms:
+
+- `usd_amount`: fixed USD notional.
+- `balance_pct`: USD notional as a fraction of the market starting balance.
+- `token_amount`: desired number of outcome tokens, converted to USD using the current side price.
+- `balance_scaled_token_amount`: token amount scaled by `market_start_balance / 100`.
+
+If more than one sizing field is present, later fields in that list override earlier
+ones. For example, `token_amount` overrides `balance_pct`.

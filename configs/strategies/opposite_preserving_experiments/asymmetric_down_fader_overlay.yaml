@@ -1,0 +1,84 @@
+name: opp_preserve_asymmetric_down_fader_overlay
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+params:
+  default_usd_amount: 1
+  max_orders: 70
+  max_market_spend_usd: 24
+  cooldown_ticks: 4
+  sell_opposite_first: false
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: cheap_down_primary_tail
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.025
+      action: buy_down
+      token_amount: 40
+
+    - name: cheap_up_small_tail
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.025
+      action: buy_up
+      token_amount: 12
+
+    - name: fade_up_spike_into_down
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 5
+        - metric: up_price
+          operator: ">="
+          value: 0.60
+      action: buy_down
+      token_amount: 30
+      cooldown_ticks: 5
+
+    - name: fade_down_spike_small_up_hedge
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 6
+        - metric: down_price
+          operator: ">="
+          value: 0.65
+      action: buy_up
+      token_amount: 10
+      cooldown_ticks: 7
+
+    - name: btc_below_ptb_down_bias
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: "<="
+          value: 0.80
+      action: buy_down
+      token_amount: 24
+

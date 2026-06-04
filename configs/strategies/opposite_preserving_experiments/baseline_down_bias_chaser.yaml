@@ -1,0 +1,4 @@
+name: baseline_down_bias_chaser
+type: strategy_ref
+config: configs/strategies/live_mix_orderbook_consumption/down_bias_chaser_tp095_cheap0025_tok20.yaml
+

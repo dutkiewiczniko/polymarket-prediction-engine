@@ -62,6 +62,7 @@ TRAJECTORY_COLUMNS = [
     "action",
     "reason",
     "usd_amount",
+    "sell_opposite_first",
     "events_count",
     "market_spend_used_before",
     "market_spend_used_after",
@@ -365,6 +366,11 @@ class LiveStrategyTrader:
 
         decision = self.strategy.decide(state)
         usd_amount = decision.usd_amount if decision.usd_amount is not None else float(self.strategy_cfg.get("order_usd", 1.0))
+        sell_opposite_first = (
+            decision.sell_opposite_first
+            if decision.sell_opposite_first is not None
+            else True
+        )
         spend_before = self.market_spend_used
         events = execute_action(
             portfolio=self.portfolio,
@@ -373,6 +379,7 @@ class LiveStrategyTrader:
             up_price=row["up_price"],
             down_price=row["down_price"],
             usd_amount=usd_amount,
+            sell_opposite_first=sell_opposite_first,
             reason=decision.reason,
         )
         if events:
@@ -398,6 +405,7 @@ class LiveStrategyTrader:
             "action": decision.action,
             "reason": decision.reason,
             "usd_amount": usd_amount,
+            "sell_opposite_first": sell_opposite_first,
             "events_count": len(events),
             "market_spend_used_before": spend_before,
             "market_spend_used_after": self.market_spend_used,
