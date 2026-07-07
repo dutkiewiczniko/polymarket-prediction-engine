@@ -37,3 +37,8 @@ rejected_market_files.csv
 market_data_rejections*.csv
 
 .env
+
+# Local archive of moved (not deleted) data/model/trajectory files -- see archive/README.md
+archive/legacy_market_data/
+archive/legacy_models/
+archive/legacy_run_trajectories/

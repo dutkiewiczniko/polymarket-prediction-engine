@@ -93,6 +93,7 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
             default_scale=float(params.get("default_scale", 0.75)),
             max_orders=int(params["max_orders"]) if params.get("max_orders") is not None else None,
             cooldown_ticks=int(params.get("cooldown_ticks", 0)),
+            size_mode=str(params.get("size_mode", "min")),
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy

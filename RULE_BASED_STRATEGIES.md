@@ -161,3 +161,34 @@ Buy rules can also define size in strategy terms:
 
 If more than one sizing field is present, later fields in that list override earlier
 ones. For example, `token_amount` overrides `balance_pct`.
+
+## Voting Ensemble Strategy
+
+`type: voting_ensemble` runs several member strategy configs in parallel and only
+trades when at least `min_votes` of them agree on the same side that tick.
+
+```yaml
+type: voting_ensemble
+params:
+  min_votes: 2
+  default_scale: 0.75
+  priority_scale: 0.65
+  size_mode: max
+  priority_members:
+    - family_up_bias_chaser
+  members:
+    - label: family_up_bias_chaser
+      config: configs/strategies/.../up_bias_chaser.yaml
+    - label: family_neutral_chaser
+      config: configs/strategies/.../neutral_chaser.yaml
+```
+
+When enough members agree, the trade is sized off one of the agreeing members'
+requested `usd_amount`, then scaled by `priority_scale` (if any agreeing member is
+in `priority_members`) or `default_scale` otherwise. `size_mode` picks which
+agreeing order size to use:
+
+- `min` (default): the smallest agreeing order size. Conservative.
+- `max`: the largest agreeing order size. More aggressive; use
+  `scripts/simulation/compare_strategies.py` (see `SCRIPTS_SUMMARY.md`) to check
+  the tradeoff against `min` before switching a live config.

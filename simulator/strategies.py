@@ -329,7 +329,10 @@ class VotingEnsembleStrategy(BaseStrategy):
         default_scale: float = 0.75,
         max_orders: int | None = None,
         cooldown_ticks: int = 0,
+        size_mode: str = "min",
     ):
+        if size_mode not in {"min", "max"}:
+            raise ValueError(f"Unknown voting_ensemble size_mode: {size_mode!r}")
         self.members = members
         self.member_names = member_names
         self.min_votes = min_votes
@@ -338,6 +341,7 @@ class VotingEnsembleStrategy(BaseStrategy):
         self.default_scale = default_scale
         self.max_orders = max_orders
         self.cooldown_ticks = cooldown_ticks
+        self.size_mode = size_mode
         self._ticks_since_trade = cooldown_ticks
 
     def decide(self, state: DecisionState) -> StrategyDecision:
@@ -372,7 +376,11 @@ class VotingEnsembleStrategy(BaseStrategy):
             for _, decision in votes
             if decision.usd_amount is not None and decision.usd_amount > 0
         ]
-        usd_amount = min(sized_votes) * scale if sized_votes else None
+        if sized_votes:
+            size_pick = max(sized_votes) if self.size_mode == "max" else min(sized_votes)
+            usd_amount = size_pick * scale
+        else:
+            usd_amount = None
         sell_opposite_first = not any(decision.sell_opposite_first is False for _, decision in votes)
         self._ticks_since_trade = 0
         voters = ",".join(name for name, _ in votes)

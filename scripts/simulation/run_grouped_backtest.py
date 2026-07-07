@@ -36,6 +36,12 @@ def parse_args():
     )
     parser.add_argument("--groups", type=int, default=50)
     parser.add_argument("--markets-per-group", type=int, default=6)
+    parser.add_argument(
+        "--market-offset",
+        type=int,
+        default=0,
+        help="Skip this many sequential markets (sorted by filename) before taking groups x markets-per-group.",
+    )
     parser.add_argument("--batch-id", default="")
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--min-order-usd", type=float, default=1.0)
@@ -59,6 +65,28 @@ def safe_name(value: str) -> str:
     value = str(value).strip()
     value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
     return value.strip("_") or "unnamed"
+
+
+def select_market_group(
+    markets_folder: str,
+    market_pattern: str,
+    groups: int,
+    markets_per_group: int,
+    offset: int = 0,
+) -> list[Path]:
+    """Pick `groups * markets_per_group` sequential markets (sorted by filename),
+    starting `offset` markets into the folder. Same offset always yields the same
+    markets, which is what a fair before/after comparison needs; vary `offset` to
+    re-run a check against a different historical slice.
+    """
+    markets = discover_market_csvs(markets_folder, market_pattern)
+    needed = groups * markets_per_group
+    if offset < 0 or offset + needed > len(markets):
+        raise SystemExit(
+            f"Need {needed} markets starting at offset {offset}, "
+            f"but only {len(markets)} markets exist in {markets_folder}"
+        )
+    return markets[offset:offset + needed]
 
 
 def apply_virtual_withdrawals(master_balance: float, reserve: float, triggered: set[float], cfg: dict) -> tuple[float, float, float]:
@@ -349,34 +377,40 @@ def write_report(run_dir: Path, group_df: pd.DataFrame, market_df: pd.DataFrame,
     (run_dir / "grouped_strategy_report.html").write_text(html_text, encoding="utf-8")
 
 
-def main():
-    args = parse_args()
-    strategy_cfg = load_yaml(args.strategy_config)
-    balance_cfg = load_yaml(args.balance_config)
-    strategy_name = strategy_cfg.get("name") or Path(args.strategy_config).stem
-    batch_id = args.batch_id or f"grouped_{safe_name(strategy_name)}_{args.groups}x{args.markets_per_group}"
-    run_dir = Path(args.output_root) / safe_name(batch_id)
-    trajectories_dir = run_dir / "trajectories"
-    trajectories_dir.mkdir(parents=True, exist_ok=True)
-
-    markets = discover_market_csvs(args.markets_folder, args.market_pattern)
-    needed = args.groups * args.markets_per_group
+def run_grouped_strategy(
+    markets: list[Path],
+    strategy_cfg: dict,
+    balance_cfg: dict,
+    *,
+    groups: int,
+    markets_per_group: int,
+    trajectories_dir: Path,
+    min_order_usd: float = 1.0,
+    liquidity_depth_window_cents: int = 2,
+    liquidity_fill_fraction: float = 1.0,
+    liquidity_missing_depth_policy: str = "skip",
+    trajectory_log_mode: str = "actions",
+    verbose: bool = True,
+) -> tuple["pd.DataFrame", "pd.DataFrame"]:
+    """Simulate one strategy across `groups` sequential, non-overlapping chunks of
+    `markets_per_group` markets each, carrying a running master/reserve balance
+    within each group. Returns (market_df, group_df). Caller is responsible for
+    picking `markets` (see select_market_group) so the same markets can be reused
+    across strategies for a fair comparison.
+    """
+    needed = groups * markets_per_group
     if len(markets) < needed:
-        raise SystemExit(f"Need {needed} markets, found {len(markets)} in {args.markets_folder}")
-    markets = markets[:needed]
+        raise SystemExit(f"Need {needed} markets, got {len(markets)}")
 
     start_master = float(balance_cfg.get("starting_balance", 100.0))
     initial_reserve = float(balance_cfg.get("initial_reserved_balance", 0.0) or 0.0)
 
     market_rows = []
     group_rows = []
-    print(f"Grouped backtest: {batch_id}")
-    print(f"Markets: {needed} ({args.groups} groups x {args.markets_per_group})")
-    print(f"Run dir: {run_dir}")
 
-    for group_index in range(args.groups):
+    for group_index in range(groups):
         group_markets = markets[
-            group_index * args.markets_per_group:(group_index + 1) * args.markets_per_group
+            group_index * markets_per_group:(group_index + 1) * markets_per_group
         ]
         master = start_master
         reserve = initial_reserve
@@ -392,7 +426,8 @@ def main():
         group_executed = 0.0
         group_max_order = 0.0
 
-        print(f"Group {group_index + 1}/{args.groups}")
+        if verbose:
+            print(f"Group {group_index + 1}/{groups}")
         for market_in_group, market_path in enumerate(group_markets, start=1):
             master, reserve, topped_up = apply_reserve_top_up(master, reserve, balance_cfg)
             master_before = master
@@ -447,12 +482,12 @@ def main():
                 order_usd=float(strategy_cfg.get("order_usd", 1.0)),
                 final_outcome=None,
                 liquidity_aware_execution=True,
-                liquidity_depth_window_cents=args.liquidity_depth_window_cents,
-                liquidity_fill_fraction=args.liquidity_fill_fraction,
-                liquidity_missing_depth_policy=args.liquidity_missing_depth_policy,
-                min_order_usd=args.min_order_usd,
+                liquidity_depth_window_cents=liquidity_depth_window_cents,
+                liquidity_fill_fraction=liquidity_fill_fraction,
+                liquidity_missing_depth_policy=liquidity_missing_depth_policy,
+                min_order_usd=min_order_usd,
             )
-            trajectory_stats = summarize_trajectory(output_csv, args.trajectory_log_mode)
+            trajectory_stats = summarize_trajectory(output_csv, trajectory_log_mode)
             reward = float(result.total_reward)
             master_after_before_withdrawal = max(0.0, master_before + reward)
             master, reserve, withdrawn = apply_virtual_withdrawals(
@@ -534,8 +569,42 @@ def main():
             "reserve_path": "|".join(f"{value:.10g}" for value in reserve_path),
         })
 
-    market_df = pd.DataFrame(market_rows)
-    group_df = pd.DataFrame(group_rows)
+    return pd.DataFrame(market_rows), pd.DataFrame(group_rows)
+
+
+def main():
+    args = parse_args()
+    strategy_cfg = load_yaml(args.strategy_config)
+    balance_cfg = load_yaml(args.balance_config)
+    strategy_name = strategy_cfg.get("name") or Path(args.strategy_config).stem
+    batch_id = args.batch_id or f"grouped_{safe_name(strategy_name)}_{args.groups}x{args.markets_per_group}"
+    run_dir = Path(args.output_root) / safe_name(batch_id)
+    trajectories_dir = run_dir / "trajectories"
+    trajectories_dir.mkdir(parents=True, exist_ok=True)
+
+    markets = select_market_group(
+        args.markets_folder, args.market_pattern, args.groups, args.markets_per_group, args.market_offset
+    )
+    needed = args.groups * args.markets_per_group
+
+    print(f"Grouped backtest: {batch_id}")
+    print(f"Markets: {needed} ({args.groups} groups x {args.markets_per_group}, offset {args.market_offset})")
+    print(f"Run dir: {run_dir}")
+
+    market_df, group_df = run_grouped_strategy(
+        markets,
+        strategy_cfg,
+        balance_cfg,
+        groups=args.groups,
+        markets_per_group=args.markets_per_group,
+        trajectories_dir=trajectories_dir,
+        min_order_usd=args.min_order_usd,
+        liquidity_depth_window_cents=args.liquidity_depth_window_cents,
+        liquidity_fill_fraction=args.liquidity_fill_fraction,
+        liquidity_missing_depth_policy=args.liquidity_missing_depth_policy,
+        trajectory_log_mode=args.trajectory_log_mode,
+    )
+
     run_dir.mkdir(parents=True, exist_ok=True)
     market_df.to_csv(run_dir / "market_summary.csv", index=False)
     group_df.to_csv(run_dir / "group_summary.csv", index=False)
