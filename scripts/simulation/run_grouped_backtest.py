@@ -477,8 +477,10 @@ def run_grouped_strategy(
         group_max_order = 0.0
 
         if verbose:
-            print(f"Group {group_index + 1}/{groups}")
+            print(f"Group {group_index + 1}/{groups}", flush=True)
         for market_in_group, market_path in enumerate(group_markets, start=1):
+            if verbose:
+                print(f"  market {market_in_group}/{markets_per_group}", flush=True)
             master, reserve, topped_up = apply_reserve_top_up(master, reserve, balance_cfg)
             master_before = master
             if cooldown_markets_remaining > 0:

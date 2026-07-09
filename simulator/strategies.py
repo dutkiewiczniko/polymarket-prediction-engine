@@ -1,4 +1,5 @@
 \
+import bisect
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -796,10 +797,15 @@ def abs_distance_pct(value: float | None, target: float | None) -> float | None:
 
 
 def latest_value_at_or_before(series: list[tuple[float, float]], cutoff_time: float) -> float | None:
-    for timestamp, value in reversed(series):
-        if timestamp <= cutoff_time:
-            return value
-    return None
+    """series must be sorted ascending by timestamp (true of the append-only,
+    front-trimmed momentum sample buffers). Binary search instead of a linear
+    backward scan -- this is called for every momentum window on every tick,
+    so an O(n) scan here is the dominant cost of RuleBasedStrategy replay.
+    """
+    idx = bisect.bisect_right(series, (cutoff_time, float("inf")))
+    if idx == 0:
+        return None
+    return series[idx - 1][1]
 
 
 def momentum_pct(series: list[tuple[float, float]], now_time: float | None, window_s: float) -> float | None:

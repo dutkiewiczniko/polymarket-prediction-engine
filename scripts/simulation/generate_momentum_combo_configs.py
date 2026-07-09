@@ -105,6 +105,22 @@ COMBOS = {
     # test whether it improves the weak-regime (group 3) floor.
     "champ_plus_900s": ["1t", "2t", "60s", "120s", "900s"],
     "champ_240_900": ["1t", "2t", "60s", "240s", "900s"],
+    # Slow-stack experiment (2026-07-09): warm singles peak at 240-300s (~870-910)
+    # and 900s (~868), so test a no-ticks slow stack (WARM ONLY -- 240s+ windows
+    # are dead without --warmup-prior-market). The +1t variant answers whether
+    # tick windows still matter once slow windows get their pool share.
+    "slow_60_120_240_900": ["60s", "120s", "240s", "900s"],
+    "slow_60_120_900": ["60s", "120s", "900s"],
+    "slow_plus_1t": ["1t", "60s", "120s", "240s", "900s"],
+    # 240s dropped entirely (slow_plus_1t's best, but champ_plus_900s already
+    # covers {1t,2t,60,120,900}) -- this is the ticks-minimal {1t,60,120,900}.
+    "quick_1t_60_120_900": ["1t", "60s", "120s", "900s"],
+    # Full stack: ticks + all four slow windows. 2t vs 3t both included --
+    # 2t was load-bearing in the {1t,2t,60s,120s} champion context but 3t beat
+    # it decisively in isolated pairs (momentum-findings memory: window
+    # importance is context-dependent, never judge from one ablation).
+    "full_1t_2t_60_120_240_900": ["1t", "2t", "60s", "120s", "240s", "900s"],
+    "full_1t_3t_60_120_240_900": ["1t", "3t", "60s", "120s", "240s", "900s"],
 }
 
 

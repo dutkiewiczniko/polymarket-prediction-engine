@@ -89,6 +89,18 @@ Supported metrics are:
 - `down_position_value`
 - `orders_placed`
 
+Any *extra* column present in the market CSV (beyond the base replay columns)
+is also exposed as a metric under its column name, parsed as a float when
+possible. This is how the per-market macro BTC trend metrics work:
+`btc_change_1h_pct`, `btc_change_12h_pct`, `btc_change_24h_pct`,
+`btc_change_7d_pct` -- the percent change of BTC over that period ending at
+market start, constant for all ticks of one market. They are added to market
+CSVs by `scripts/data/enrich_markets_with_btc_trend.py` (public Binance klines,
+no API key) and used by the `configs/strategies/btc_trend_experiment/` family.
+Referencing them on a non-enriched market CSV raises `Unknown rule metric`.
+They are backtest-only until the live engine computes them at market start
+(see the experiment README).
+
 `up_price_pct_change`, `down_price_pct_change`, and `btc_pct_change` compare the
 current tick to whatever the *previous tick* happened to be -- since recorded ticks
 are well under 1 second apart, this is effectively noise, not a real momentum signal.
