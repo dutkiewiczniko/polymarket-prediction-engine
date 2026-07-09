@@ -1,0 +1,25 @@
+For this, we will need a new, slightly elaborate system
+in our engine. Implement this for backtesting for now,
+but make a note that this needs to be implemented in the
+live engine before we begin using it (if our results prove
+effective). the longer periods (160, 240, and this would also
+just improve the other periods at start of market) 
+would require finding markets
+that had a market previous to theirs (by timestamp in title)
+so that this stat can be obtained.
+If this stat makes it too complex to calculate in the engine,
+we could make a script to calculate it for valid market
+files, somehow flag that we can start with those, and save
+them in a new folder with the new relevant momentum stats as
+new columns. 
+
+
+Interesting, I hadn't thought about token momentum before, are we looking
+at token momentum at all to make decisions? Maybe this is something
+we may need to implement in the future
+
+
+When deciding pools for how much rules can spend, a better strategy might be:
+set a small portion (e.g. 30-50% of decided budget for that rule) aside,
+dont let any rules spend it but that one. the rest goes in a pool, what
+ever strategy needs it, takes it.

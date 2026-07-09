@@ -67,6 +67,55 @@ def safe_name(value: str) -> str:
     return value.strip("_") or "unnamed"
 
 
+MARKET_INTERVAL_S = 300
+
+
+def find_prior_market_csv(market_path: Path) -> Path | None:
+    """Markets are named btc-updown-5m-<unix_start>.csv; the previous market is
+    <unix_start - 300> in the same folder. Returns None when no such file exists
+    (gap in the recorded series)."""
+    stem_ts = market_path.stem.rsplit("-", 1)[-1]
+    if not stem_ts.isdigit():
+        return None
+    prior = market_path.with_name(f"{market_path.stem[:-len(stem_ts)]}{int(stem_ts) - MARKET_INTERVAL_S}.csv")
+    return prior if prior.exists() else None
+
+
+def find_prior_market_chain(market_path: Path, depth: int) -> list[Path]:
+    """Walk back up to `depth` consecutive prior markets, oldest first, stopping
+    at the first gap. A contiguous chain is required -- seeding across a gap
+    would splice stale prices into the momentum series."""
+    chain: list[Path] = []
+    current = market_path
+    for _ in range(depth):
+        prior = find_prior_market_csv(current)
+        if prior is None:
+            break
+        chain.append(prior)
+        current = prior
+    chain.reverse()
+    return chain
+
+
+def load_btc_warmup_samples(market_csv: Path) -> list[tuple[float, float]]:
+    """Extract the (unix_time, btc_price) series from a market CSV for seeding
+    strategy momentum history. Chainlink preferred, Binance fallback, matching
+    the strategy engine's own choice."""
+    samples = []
+    with market_csv.open("r", newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            try:
+                unix_time = float(row["unix_time"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            btc = row.get("btc_chainlink") or row.get("btc_binance")
+            try:
+                samples.append((unix_time, float(btc)))
+            except (TypeError, ValueError):
+                continue
+    return samples
+
+
 def select_market_group(
     markets_folder: str,
     market_pattern: str,
@@ -390,6 +439,7 @@ def run_grouped_strategy(
     liquidity_fill_fraction: float = 1.0,
     liquidity_missing_depth_policy: str = "skip",
     trajectory_log_mode: str = "actions",
+    warmup_prior_market: bool = False,
     verbose: bool = True,
 ) -> tuple["pd.DataFrame", "pd.DataFrame"]:
     """Simulate one strategy across `groups` sequential, non-overlapping chunks of
@@ -474,6 +524,11 @@ def run_grouped_strategy(
             effective_balance = float(effective_balance)
             output_csv = trajectories_dir / f"group_{group_index + 1:03d}" / f"{market_path.stem}.csv"
             strategy = build_strategy_from_config(strategy_cfg)
+            if warmup_prior_market:
+                from simulator.strategies import RuleBasedStrategy
+                depth = -(-int(max(RuleBasedStrategy.MOMENTUM_WINDOWS_S)) // MARKET_INTERVAL_S)
+                for prior_csv in find_prior_market_chain(market_path, depth):
+                    strategy.seed_btc_history(load_btc_warmup_samples(prior_csv))
             result = run_simulation(
                 market_csv=market_path,
                 strategy=strategy,

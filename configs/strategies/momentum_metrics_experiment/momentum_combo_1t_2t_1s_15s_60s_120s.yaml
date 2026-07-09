@@ -1,0 +1,219 @@
+name: momentum_combo_1t_2t_1s_15s_60s_120s
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+# Combines short (fast-reacting) and long (BTC-trend) momentum windows in one
+# strategy. Each window is its own rule with its own pool, so the high-frequency
+# fast rules (1t/2t/1s fire on almost any tick) can never starve the rarer,
+# higher-conviction slow rules (60s/120s) of budget. 6 momentum pools + 1 shared
+# lottery pool = 7 pools; each gets 1/7 of the effective market balance (pct-based,
+# not hardcoded, so it scales correctly if balance compounds/changes).
+#
+# Rules are ordered slowest-to-fastest: under first-match-wins, the rarer/higher-
+# conviction long-window signal gets priority whenever it's active; faster windows
+# only get a turn on ticks where the slower ones aren't currently firing.
+
+params:
+  default_usd_amount: 1
+  max_orders: 200
+  cooldown_ticks: 3
+
+  pools:
+    lottery:
+      max_pool_spend_pct: 0.142857
+    momentum_120s:
+      max_pool_spend_pct: 0.142857
+    momentum_60s:
+      max_pool_spend_pct: 0.142857
+    momentum_15s:
+      max_pool_spend_pct: 0.142857
+    momentum_1s:
+      max_pool_spend_pct: 0.142857
+    momentum_2t:
+      max_pool_spend_pct: 0.142857
+    momentum_1t:
+      max_pool_spend_pct: 0.142857
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: cheap_up_lottery
+      pool: lottery
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.025
+      action: buy_up
+      token_amount: 25
+
+    - name: cheap_down_lottery
+      pool: lottery
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.025
+      action: buy_down
+      token_amount: 25
+
+    - name: momentum_120s_buy_up
+      pool: momentum_120s
+      all:
+        - metric: momentum_120s
+          operator: ">="
+          value: 0.03
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 10
+
+    - name: momentum_120s_buy_down
+      pool: momentum_120s
+      all:
+        - metric: momentum_120s
+          operator: "<="
+          value: -0.03
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 10
+
+    - name: momentum_60s_buy_up
+      pool: momentum_60s
+      all:
+        - metric: momentum_60s
+          operator: ">="
+          value: 0.03
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 10
+
+    - name: momentum_60s_buy_down
+      pool: momentum_60s
+      all:
+        - metric: momentum_60s
+          operator: "<="
+          value: -0.03
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 10
+
+    - name: momentum_15s_buy_up
+      pool: momentum_15s
+      all:
+        - metric: momentum_15s
+          operator: ">="
+          value: 0.01
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 10
+
+    - name: momentum_15s_buy_down
+      pool: momentum_15s
+      all:
+        - metric: momentum_15s
+          operator: "<="
+          value: -0.01
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 10
+
+    - name: momentum_1s_buy_up
+      pool: momentum_1s
+      all:
+        - metric: momentum_1s
+          operator: ">="
+          value: 0.0001
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 10
+
+    - name: momentum_1s_buy_down
+      pool: momentum_1s
+      all:
+        - metric: momentum_1s
+          operator: "<="
+          value: -0.0001
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 10
+
+    - name: momentum_2t_buy_up
+      pool: momentum_2t
+      all:
+        - metric: momentum_2t
+          operator: ">="
+          value: 0.0001
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 10
+
+    - name: momentum_2t_buy_down
+      pool: momentum_2t
+      all:
+        - metric: momentum_2t
+          operator: "<="
+          value: -0.0001
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 10
+
+    - name: momentum_1t_buy_up
+      pool: momentum_1t
+      all:
+        - metric: momentum_1t
+          operator: ">="
+          value: 0.0001
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 10
+
+    - name: momentum_1t_buy_down
+      pool: momentum_1t
+      all:
+        - metric: momentum_1t
+          operator: "<="
+          value: -0.0001
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 10

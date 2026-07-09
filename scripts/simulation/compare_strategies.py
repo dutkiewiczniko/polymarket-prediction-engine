@@ -59,6 +59,14 @@ def parse_args():
     parser.add_argument("--liquidity-fill-fraction", type=float, default=1.0)
     parser.add_argument("--liquidity-missing-depth-policy", choices=["skip", "allow"], default="skip")
     parser.add_argument("--trajectory-log-mode", choices=["none", "actions", "all"], default="none")
+    parser.add_argument(
+        "--warmup-prior-market",
+        action="store_true",
+        help="Seed each strategy's BTC momentum history from the previous market's CSV "
+        "(filename timestamp - 300s) so long time-window metrics have data at market start. "
+        "Backtest-only: the live engine does not support this yet. Do not compare warm runs "
+        "against non-warm runs.",
+    )
     parser.add_argument("--batch-id", default="")
     parser.add_argument("--output-root", default="runs/compare")
     return parser.parse_args()
@@ -117,9 +125,29 @@ def write_comparison_report(run_dir: Path, comparison_df: pd.DataFrame, labels: 
     .muted {{ color:#64748b; font-size:13px; }}
     table {{ width:100%; border-collapse:collapse; background:#fff; margin-top:14px; }}
     th,td {{ padding:8px 10px; border-bottom:1px solid #e5ebf3; text-align:left; font-size:13px; }}
-    th {{ color:#315f9f; background:#f8fbff; }}
-    tr:first-child td {{ font-weight:700; }}
+    th {{ color:#315f9f; background:#f8fbff; cursor:pointer; user-select:none; }}
+    th:hover {{ background:#eaf2fe; }}
+    th .arrow {{ font-size:10px; color:#94a3b8; }}
   </style>
+  <script>
+    function sortTable(colIndex, th) {{
+      const table = th.closest("table");
+      const tbody = table.querySelector("tbody");
+      const rows = Array.from(tbody.rows);
+      const asc = th.dataset.asc !== "true";
+      table.querySelectorAll("th").forEach(h => {{ h.dataset.asc = ""; h.querySelector(".arrow").textContent = ""; }});
+      th.dataset.asc = asc;
+      th.querySelector(".arrow").textContent = asc ? " \\u25B2" : " \\u25BC";
+      rows.sort((a, b) => {{
+        const av = a.cells[colIndex].textContent.replace(/[,%]/g, "");
+        const bv = b.cells[colIndex].textContent.replace(/[,%]/g, "");
+        const an = parseFloat(av), bn = parseFloat(bv);
+        const cmp = (isNaN(an) || isNaN(bn)) ? av.localeCompare(bv) : an - bn;
+        return asc ? cmp : -cmp;
+      }});
+      rows.forEach(r => tbody.appendChild(r));
+    }}
+  </script>
 </head>
 <body>
 <header>
@@ -131,8 +159,7 @@ def write_comparison_report(run_dir: Path, comparison_df: pd.DataFrame, labels: 
 </header>
 <main>
   <table>
-    <thead><tr><th>Label</th><th>Mean Group Reward</th><th>Median Group Reward</th><th>Group Win Rate</th>
-    <th>Bust Rate</th><th>Mean Final Equity</th><th>Mean Orders/Group</th><th>Delta vs {html.escape(baseline_label)}</th></tr></thead>
+    <thead><tr>{"".join(f'<th onclick="sortTable({i}, this)">{h}<span class="arrow"></span></th>' for i, h in enumerate(["Label", "Mean Group Reward", "Median Group Reward", "Group Win Rate", "Bust Rate", "Mean Final Equity", "Mean Orders/Group", f"Delta vs {html.escape(baseline_label)}"]))}</tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </main>
@@ -188,6 +215,7 @@ def main():
             liquidity_fill_fraction=args.liquidity_fill_fraction,
             liquidity_missing_depth_policy=args.liquidity_missing_depth_policy,
             trajectory_log_mode=args.trajectory_log_mode,
+            warmup_prior_market=args.warmup_prior_market,
         )
         market_df.to_csv(strategy_run_dir / "market_summary.csv", index=False)
         group_df.to_csv(strategy_run_dir / "group_summary.csv", index=False)

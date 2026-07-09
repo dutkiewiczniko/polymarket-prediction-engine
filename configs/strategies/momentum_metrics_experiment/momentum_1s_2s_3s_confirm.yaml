@@ -1,0 +1,84 @@
+name: momentum_1s_2s_3s_confirm
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+# Requires momentum_1s, momentum_2s, and momentum_3s to all agree in sign
+# (near-zero epsilon threshold on each, same reasoning as momentum_1s_only) --
+# tests whether stacking very-short windows together beats 1s alone or 15s alone.
+
+params:
+  default_usd_amount: 1
+  max_orders: 65
+  cooldown_ticks: 3
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: cheap_up_lottery
+      all:
+        - metric: up_price
+          operator: "<="
+          value: 0.025
+      action: buy_up
+      token_amount: 25
+
+    - name: cheap_down_lottery
+      all:
+        - metric: down_price
+          operator: "<="
+          value: 0.025
+      action: buy_down
+      token_amount: 25
+
+    - name: momentum_1s_2s_3s_buy_up
+      all:
+        - metric: momentum_1s
+          operator: ">="
+          value: 0.0001
+        - metric: momentum_2s
+          operator: ">="
+          value: 0.0001
+        - metric: momentum_3s
+          operator: ">="
+          value: 0.0001
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 25
+
+    - name: momentum_1s_2s_3s_buy_down
+      all:
+        - metric: momentum_1s
+          operator: "<="
+          value: -0.0001
+        - metric: momentum_2s
+          operator: "<="
+          value: -0.0001
+        - metric: momentum_3s
+          operator: "<="
+          value: -0.0001
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 25

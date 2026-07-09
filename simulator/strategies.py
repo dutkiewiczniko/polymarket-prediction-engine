@@ -20,6 +20,20 @@ class BaseStrategy:
     def decide(self, state: DecisionState) -> StrategyDecision:
         return StrategyDecision("hold", "base strategy holds")
 
+    def seed_btc_history(self, samples: list[tuple[float, float]]) -> None:
+        """Pre-load (unix_time, btc_price) samples from before this market opened,
+        so time-window momentum metrics have history at market start instead of
+        returning None until the window has elapsed in-market. BTC is one
+        continuous price stream, so prior-market samples are valid history.
+        Token (up/down) prices must NOT be seeded this way -- they belong to a
+        different market and reset each round.
+
+        NOTE: backtest-only for now. The live engine (scripts/live/
+        live_strategy_suite.py) rebuilds strategies per market and does not yet
+        carry BTC history across the boundary -- that must be implemented there
+        before running any long-window (>60s) momentum strategy live.
+        """
+
 
 class HoldStrategy(BaseStrategy):
     name = "hold"
@@ -105,6 +119,24 @@ class MomentumStrategy(BaseStrategy):
 class RuleBasedStrategy(BaseStrategy):
     name = "rule_based"
 
+    # Windows (seconds) for the momentum_*s / up_price_momentum_*s / down_price_momentum_*s
+    # metrics. Tick spacing in recorded markets is well under 1 second, so these look back
+    # by elapsed time (like the offline btc_return_Xs features in build_training_market_data.py),
+    # not by tick count -- a fixed N-tick lookback is not a stable time window.
+    # Windows above 300s exceed one market's lifetime and can only ever have data
+    # via prior-market history seeding (seed_btc_history) -- they are permanently
+    # None in cold runs and in the live engine until warmup is ported there.
+    MOMENTUM_WINDOWS_S = (
+        1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 60.0, 80.0, 120.0, 160.0,
+        230.0, 240.0, 250.0, 275.0, 300.0, 420.0, 600.0, 900.0, 1200.0, 1500.0,
+    )
+    _MOMENTUM_HISTORY_BUFFER_S = max(MOMENTUM_WINDOWS_S) + 10.0
+
+    # momentum_Nt / up_price_momentum_Nt / down_price_momentum_Nt look back exactly
+    # N recorded ticks (not elapsed seconds) -- since tick spacing is sub-second,
+    # this is a much faster-reacting (and noisier) signal than momentum_1s.
+    MOMENTUM_TICK_WINDOWS = (1, 2, 3, 4)
+
     def __init__(
         self,
         rules: list[dict[str, Any]],
@@ -114,7 +146,11 @@ class RuleBasedStrategy(BaseStrategy):
         sell_opposite_first: bool = True,
         max_market_spend_usd: float | None = None,
         combine_matching_buys: bool = False,
+        pools: dict[str, dict[str, Any]] | None = None,
+        cooldown_scope: str = "global",
     ):
+        if cooldown_scope not in {"global", "per_rule"}:
+            raise ValueError(f"Unknown cooldown_scope: {cooldown_scope!r}")
         self.rules = rules
         self.default_usd_amount = default_usd_amount
         self.max_orders = max_orders
@@ -122,14 +158,25 @@ class RuleBasedStrategy(BaseStrategy):
         self.sell_opposite_first = sell_opposite_first
         self.max_market_spend_usd = max_market_spend_usd
         self.combine_matching_buys = combine_matching_buys
+        self.pools = pools or {}
+        self.cooldown_scope = cooldown_scope
         self._last_up_price: float | None = None
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
         self._ticks_since_trade = cooldown_ticks
         self._active_cooldown_ticks = cooldown_ticks
+        self._pool_spend: dict[str, float] = {name: 0.0 for name in self.pools}
+        self._tick_index = 0
+        self._rule_last_action_tick: dict[int, int] = {}
+        self._up_series: list[tuple[float, float]] = []
+        self._down_series: list[tuple[float, float]] = []
+        self._btc_series: list[tuple[float, float]] = []
 
     def decide(self, state: DecisionState) -> StrategyDecision:
         metrics = self._build_metrics(state)
+
+        if self.cooldown_scope == "per_rule":
+            return self._decide_per_rule(state, metrics)
 
         if self._ticks_since_trade < self._active_cooldown_ticks:
             self._ticks_since_trade += 1
@@ -165,7 +212,19 @@ class RuleBasedStrategy(BaseStrategy):
                     if extra_reasons:
                         reason = " + ".join([reason, *extra_reasons])
                     sell_opposite_first = sell_opposite_first and extra_sell_opposite_first
-                if action in {"buy_up", "buy_down"} and self.max_market_spend_usd is not None and not risk_override:
+                pool_name = rule.get("pool")
+                if action in {"buy_up", "buy_down"} and pool_name is not None:
+                    if pool_name not in self.pools:
+                        raise ValueError(f"Rule references unknown pool: {pool_name!r}")
+                    if not risk_override:
+                        pool_cap = self._resolve_pool_cap(pool_name, metrics)
+                        if pool_cap is not None:
+                            remaining_pool = pool_cap - self._pool_spend[pool_name]
+                            if remaining_pool <= 0:
+                                return StrategyDecision("hold", f"max pool spend reached ({pool_name})")
+                            usd_amount = min(float(usd_amount), remaining_pool)
+                    self._pool_spend[pool_name] += float(usd_amount)
+                elif action in {"buy_up", "buy_down"} and self.max_market_spend_usd is not None and not risk_override:
                     remaining_spend = self.max_market_spend_usd - state.market_spend_used
                     if remaining_spend <= 0:
                         return StrategyDecision("hold", "max market spend reached")
@@ -181,9 +240,105 @@ class RuleBasedStrategy(BaseStrategy):
         self._remember(metrics)
         return StrategyDecision("hold", "no rule matched")
 
+    def _decide_per_rule(self, state: DecisionState, metrics: dict[str, float | bool | None]) -> StrategyDecision:
+        """Non-interfering rule evaluation (cooldown_scope: per_rule).
+
+        Differences from the global path, all aimed at rules not blocking each
+        other: (1) each rule has its own cooldown, started only when the rule
+        actually returns a buy/sell -- a matching rule that can't act does not
+        freeze the strategy; (2) a rule that is cooling down, over max_orders,
+        unsizeable, or out of pool budget is SKIPPED so lower rules still get
+        evaluated, instead of returning a blocking hold. Explicit hold-action
+        rules still return hold immediately -- they are deliberate guards.
+        """
+        self._tick_index += 1
+        self._remember(metrics)
+
+        for rule_index, rule in enumerate(self.rules):
+            rule_cooldown = int(rule.get("cooldown_ticks", self.cooldown_ticks))
+            last_action_tick = self._rule_last_action_tick.get(rule_index)
+            if last_action_tick is not None and self._tick_index - last_action_tick <= rule_cooldown:
+                continue
+            if not self._rule_matches(rule, metrics):
+                continue
+
+            action = str(rule.get("action", "hold")).lower().strip()
+            reason = str(rule.get("name", f"rule matched: {action}"))
+            if action == "hold":
+                return StrategyDecision("hold", reason)
+
+            risk_override = self._rule_risk_override(rule, action, metrics)
+            if (
+                action in {"buy_up", "buy_down"}
+                and self.max_orders is not None
+                and state.orders_placed >= self.max_orders
+                and not risk_override
+            ):
+                continue
+            usd_amount = self._rule_usd_amount(rule, action, metrics)
+            if isinstance(usd_amount, StrategyDecision):
+                continue
+            sell_opposite_first = as_bool(rule.get("sell_opposite_first", self.sell_opposite_first))
+            if self.combine_matching_buys and action in {"buy_up", "buy_down"}:
+                extra_amount, extra_reasons, extra_sell_opposite_first = self._combined_same_side_buys(
+                    rules=self.rules[rule_index + 1:],
+                    action=action,
+                    metrics=metrics,
+                )
+                usd_amount += extra_amount
+                if extra_reasons:
+                    reason = " + ".join([reason, *extra_reasons])
+                sell_opposite_first = sell_opposite_first and extra_sell_opposite_first
+            pool_name = rule.get("pool")
+            if action in {"buy_up", "buy_down"} and pool_name is not None:
+                if pool_name not in self.pools:
+                    raise ValueError(f"Rule references unknown pool: {pool_name!r}")
+                if not risk_override:
+                    pool_cap = self._resolve_pool_cap(pool_name, metrics)
+                    if pool_cap is not None:
+                        remaining_pool = pool_cap - self._pool_spend[pool_name]
+                        if remaining_pool <= 0:
+                            continue
+                        usd_amount = min(float(usd_amount), remaining_pool)
+                self._pool_spend[pool_name] += float(usd_amount)
+            elif action in {"buy_up", "buy_down"} and self.max_market_spend_usd is not None and not risk_override:
+                remaining_spend = self.max_market_spend_usd - state.market_spend_used
+                if remaining_spend <= 0:
+                    continue
+                usd_amount = min(float(usd_amount), remaining_spend)
+
+            self._rule_last_action_tick[rule_index] = self._tick_index
+            return StrategyDecision(
+                action=action,
+                reason=reason,
+                usd_amount=float(usd_amount) if usd_amount is not None else None,
+                sell_opposite_first=sell_opposite_first,
+            )
+
+        return StrategyDecision("hold", "no rule matched")
+
+    def seed_btc_history(self, samples: list[tuple[float, float]]) -> None:
+        for now_time, btc in samples:
+            self._record_momentum_sample(self._btc_series, now_time, btc)
+
+    def _record_momentum_sample(
+        self, series: list[tuple[float, float]], now_time: float | None, value: float | None
+    ) -> None:
+        if now_time is None or value is None:
+            return
+        series.append((now_time, value))
+        cutoff = now_time - self._MOMENTUM_HISTORY_BUFFER_S
+        while len(series) > 1 and series[0][0] < cutoff:
+            series.pop(0)
+
     def _build_metrics(self, state: DecisionState) -> dict[str, float | bool | None]:
         tick = state.tick
         btc = tick.btc_chainlink if tick.btc_chainlink is not None else tick.btc_binance
+        now_time = tick.unix_time
+
+        self._record_momentum_sample(self._up_series, now_time, tick.up_price)
+        self._record_momentum_sample(self._down_series, now_time, tick.down_price)
+        self._record_momentum_sample(self._btc_series, now_time, btc)
 
         metrics = {
             "up_price": tick.up_price,
@@ -196,6 +351,30 @@ class RuleBasedStrategy(BaseStrategy):
             "down_price_pct_change": pct_change(tick.down_price, self._last_down_price),
             "btc_price": btc,
             "btc_pct_change": pct_change(btc, self._last_btc),
+            **{
+                f"momentum_{int(window_s)}s": momentum_pct(self._btc_series, now_time, window_s) if btc is not None else None
+                for window_s in self.MOMENTUM_WINDOWS_S
+            },
+            **{
+                f"up_price_momentum_{int(window_s)}s": momentum_pct(self._up_series, now_time, window_s)
+                for window_s in self.MOMENTUM_WINDOWS_S
+            },
+            **{
+                f"down_price_momentum_{int(window_s)}s": momentum_pct(self._down_series, now_time, window_s)
+                for window_s in self.MOMENTUM_WINDOWS_S
+            },
+            **{
+                f"momentum_{ticks}t": momentum_pct_by_ticks(self._btc_series, ticks) if btc is not None else None
+                for ticks in self.MOMENTUM_TICK_WINDOWS
+            },
+            **{
+                f"up_price_momentum_{ticks}t": momentum_pct_by_ticks(self._up_series, ticks)
+                for ticks in self.MOMENTUM_TICK_WINDOWS
+            },
+            **{
+                f"down_price_momentum_{ticks}t": momentum_pct_by_ticks(self._down_series, ticks)
+                for ticks in self.MOMENTUM_TICK_WINDOWS
+            },
             "btc_distance_to_price_to_beat": distance(btc, tick.price_to_beat),
             "btc_distance_to_price_to_beat_pct": distance_pct(btc, tick.price_to_beat),
             "abs_btc_distance_to_price_to_beat": abs_distance(btc, tick.price_to_beat),
@@ -222,6 +401,21 @@ class RuleBasedStrategy(BaseStrategy):
             parsed = as_float(value)
             metrics[key] = parsed if parsed is not None else value
         return metrics
+
+    def _resolve_pool_cap(self, pool_name: str, metrics: dict[str, float | bool | None]) -> float | None:
+        pool_cfg = self.pools[pool_name]
+        caps = []
+        usd_cap = as_float(pool_cfg.get("max_pool_spend_usd"))
+        if usd_cap is not None:
+            caps.append(usd_cap)
+        pct_cap = as_float(pool_cfg.get("max_pool_spend_pct"))
+        if pct_cap is not None:
+            balance = as_float(metrics.get("market_start_balance"))
+            if balance is not None:
+                caps.append(pct_cap * balance)
+        if not caps:
+            return None
+        return min(caps)
 
     def _remember(self, metrics: dict[str, float | bool | None]) -> None:
         self._last_up_price = as_float(metrics.get("up_price"))
@@ -344,6 +538,10 @@ class VotingEnsembleStrategy(BaseStrategy):
         self.size_mode = size_mode
         self._ticks_since_trade = cooldown_ticks
 
+    def seed_btc_history(self, samples: list[tuple[float, float]]) -> None:
+        for member in self.members:
+            member.seed_btc_history(samples)
+
     def decide(self, state: DecisionState) -> StrategyDecision:
         member_decisions = [
             (name, strategy.decide(state))
@@ -444,6 +642,10 @@ class OverrideStrategy(BaseStrategy):
         self.suppress_base_while_override_position = suppress_base_while_override_position
         self.suppress_base_when_override_near_price = suppress_base_when_override_near_price
         self._override_position_side: str | None = None
+
+    def seed_btc_history(self, samples: list[tuple[float, float]]) -> None:
+        self.override.seed_btc_history(samples)
+        self.base.seed_btc_history(samples)
 
     def decide(self, state: DecisionState) -> StrategyDecision:
         self._refresh_override_position(state)
@@ -591,3 +793,34 @@ def abs_distance_pct(value: float | None, target: float | None) -> float | None:
     if raw_distance_pct is None:
         return None
     return abs(raw_distance_pct)
+
+
+def latest_value_at_or_before(series: list[tuple[float, float]], cutoff_time: float) -> float | None:
+    for timestamp, value in reversed(series):
+        if timestamp <= cutoff_time:
+            return value
+    return None
+
+
+def momentum_pct(series: list[tuple[float, float]], now_time: float | None, window_s: float) -> float | None:
+    """Percent change over the trailing `window_s` seconds of elapsed market time,
+    looked up in a (unix_time, value) series -- not a fixed number of ticks back,
+    since tick spacing in recorded markets is well under 1 second.
+    """
+    if not series or now_time is None:
+        return None
+    current = series[-1][1]
+    previous = latest_value_at_or_before(series, now_time - window_s)
+    return pct_change(current, previous)
+
+
+def momentum_pct_by_ticks(series: list[tuple[float, float]], ticks_back: int) -> float | None:
+    """Percent change vs. exactly `ticks_back` recorded ticks ago (not elapsed time).
+    Much faster-reacting and noisier than momentum_pct, since tick spacing is
+    sub-second -- "1 tick ago" is well under 1 real second.
+    """
+    if len(series) <= ticks_back:
+        return None
+    current = series[-1][1]
+    previous = series[-1 - ticks_back][1]
+    return pct_change(current, previous)

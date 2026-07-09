@@ -67,6 +67,8 @@ def build_strategy_from_config(cfg: dict) -> BaseStrategy:
                 else None
             ),
             combine_matching_buys=as_bool(params.get("combine_matching_buys", False)),
+            pools=params.get("pools"),
+            cooldown_scope=str(params.get("cooldown_scope", "global")),
         )
         strategy.name = cfg.get("name", strategy.name)
         return strategy

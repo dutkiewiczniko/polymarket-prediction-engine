@@ -189,7 +189,13 @@ def parse_args():
     parser.add_argument(
         "--balance-config",
         default="",
-        help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances.",
+        help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances. "
+        "Compounding is on by default even without this -- see --no-compound-balance.",
+    )
+    parser.add_argument(
+        "--no-compound-balance",
+        action="store_true",
+        help="Disable balance compounding; every market starts fresh at --starting-balance instead of carrying the running total forward.",
     )
     parser.add_argument("--run-id", default="", help="Optional run folder name under runs/live_strategy_suite.")
     parser.add_argument("--port", type=int, default=5062, help="Local dashboard port.")
@@ -301,8 +307,8 @@ def parse_args():
     parser.add_argument(
         "--min-order-usd",
         type=float,
-        default=0.0,
-        help="Minimum notional for simulated/live-paper orders. Use 1.0 to mirror Polymarket's minimum order size.",
+        default=1.0,
+        help="Minimum notional for simulated/live-paper orders. Defaults to 1.0 to mirror Polymarket's minimum order size; use 0 to disable.",
     )
     return parser.parse_args()
 
@@ -923,7 +929,7 @@ class LiveStrategySuite:
         self.completed_markets = 0
         self.strategy_folder = Path(args.strategy_folder)
         self.balance_cfg = load_yaml(args.balance_config) if args.balance_config else {}
-        self.compound_balance = bool(args.balance_config)
+        self.compound_balance = not args.no_compound_balance
         self.base_starting_balance = float(
             self.balance_cfg.get("starting_balance", args.starting_balance)
             if self.compound_balance
