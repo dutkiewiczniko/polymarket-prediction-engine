@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 from simulator.batch import discover_market_csvs
 from simulator.config_loader import load_yaml
 from scripts.simulation.run_grouped_backtest import (
+    load_true_outcomes,
     run_grouped_strategy,
     safe_name,
     select_market_group,
@@ -66,6 +67,13 @@ def parse_args():
         "(filename timestamp - 300s) so long time-window metrics have data at market start. "
         "Backtest-only: the live engine does not support this yet. Do not compare warm runs "
         "against non-warm runs.",
+    )
+    parser.add_argument(
+        "--true-outcomes-csv",
+        default=None,
+        help="CSV with slug,true_outcome columns (see fetch_true_outcomes.py). "
+        "Markets listed resolve to the actual Polymarket outcome instead of "
+        "tick inference, which mixed-source strikes can corrupt.",
     )
     parser.add_argument("--batch-id", default="")
     parser.add_argument("--output-root", default="runs/compare")
@@ -195,6 +203,10 @@ def main():
     )
     print(f"Run dir: {run_dir}")
 
+    true_outcomes = load_true_outcomes(args.true_outcomes_csv) if args.true_outcomes_csv else None
+    if true_outcomes is not None:
+        print(f"True outcomes: {len(true_outcomes)} markets from {args.true_outcomes_csv}")
+
     summary_rows = []
     for label, config_path in zip(labels, args.strategy_configs):
         print(f"\n--- {label} ({config_path}) ---")
@@ -216,6 +228,7 @@ def main():
             liquidity_missing_depth_policy=args.liquidity_missing_depth_policy,
             trajectory_log_mode=args.trajectory_log_mode,
             warmup_prior_market=args.warmup_prior_market,
+            true_outcomes=true_outcomes,
         )
         market_df.to_csv(strategy_run_dir / "market_summary.csv", index=False)
         group_df.to_csv(strategy_run_dir / "group_summary.csv", index=False)

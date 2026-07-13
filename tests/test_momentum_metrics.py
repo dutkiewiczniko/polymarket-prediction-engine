@@ -81,7 +81,7 @@ def pct_change_expected(current, previous):
 
 class RuleBasedStrategyTickMomentumMetricTests(unittest.TestCase):
     def test_tick_momentum_reacts_faster_than_time_windows(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         # Three ticks packed within 0.4s (sub-second spacing, like real data).
         strategy.decide(make_state(make_tick(unix_time=0.0, btc_price=100.0)))
         strategy.decide(make_state(make_tick(unix_time=0.2, btc_price=100.0)))
@@ -96,7 +96,7 @@ class RuleBasedStrategyTickMomentumMetricTests(unittest.TestCase):
         self.assertIsNone(metrics["momentum_1s"])
 
     def test_tick_momentum_metrics_present_for_all_tick_windows(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         state = make_state(make_tick(unix_time=0.0))
         metrics = strategy._build_metrics(state)
         for ticks in RuleBasedStrategy.MOMENTUM_TICK_WINDOWS:
@@ -107,7 +107,7 @@ class RuleBasedStrategyTickMomentumMetricTests(unittest.TestCase):
 
 class RuleBasedStrategyMomentumMetricTests(unittest.TestCase):
     def test_momentum_metrics_use_elapsed_time_not_tick_count(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
 
         # Ten ticks packed into the first second (sub-second spacing, like real data),
         # then one tick 30s later. A tick-count lookback (e.g. "10 ticks ago") would
@@ -123,14 +123,14 @@ class RuleBasedStrategyMomentumMetricTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["momentum_30s"], 10.0)
 
     def test_momentum_metric_is_none_when_no_sample_predates_the_window(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         # First tick ever seen -- there is no price from "120s ago" to compare against.
         state = make_state(make_tick(unix_time=1000.0, btc_price=100.0))
         metrics = strategy._build_metrics(state)
         self.assertIsNone(metrics["momentum_120s"])
 
     def test_momentum_metrics_present_for_all_configured_windows(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         state = make_state(make_tick(unix_time=0.0))
         metrics = strategy._build_metrics(state)
         for window_s in RuleBasedStrategy.MOMENTUM_WINDOWS_S:
@@ -140,7 +140,7 @@ class RuleBasedStrategyMomentumMetricTests(unittest.TestCase):
             self.assertIn(f"down_price_momentum_{int(window_s)}s", metrics)
 
     def test_seed_btc_history_gives_long_windows_data_at_market_start(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         # Prior market: BTC at 100.0 from t=0..300 (samples every 5s).
         strategy.seed_btc_history([(float(t), 100.0) for t in range(0, 300, 5)])
 
@@ -152,7 +152,7 @@ class RuleBasedStrategyMomentumMetricTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["momentum_120s"], 10.0)
 
     def test_seed_btc_history_does_not_emit_btc_momentum_without_current_btc(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         strategy.seed_btc_history([(float(t), 100.0 + t) for t in range(0, 300, 5)])
 
         state = make_state(make_tick(unix_time=300.0, btc_price=MISSING))
@@ -162,7 +162,7 @@ class RuleBasedStrategyMomentumMetricTests(unittest.TestCase):
         self.assertIsNone(metrics["momentum_1t"])
 
     def test_seed_btc_history_does_not_touch_token_price_series(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         strategy.seed_btc_history([(float(t), 100.0) for t in range(0, 300, 5)])
 
         state = make_state(make_tick(unix_time=300.0, btc_price=110.0))
@@ -173,7 +173,7 @@ class RuleBasedStrategyMomentumMetricTests(unittest.TestCase):
         self.assertIsNone(metrics["down_price_momentum_120s"])
 
     def test_old_samples_are_trimmed_from_series(self):
-        strategy = RuleBasedStrategy(rules=[])
+        strategy = RuleBasedStrategy(rules=[], compute_all_metrics=True)
         buffer_s = RuleBasedStrategy._MOMENTUM_HISTORY_BUFFER_S
         horizon = buffer_s * 2
         step = 5.0

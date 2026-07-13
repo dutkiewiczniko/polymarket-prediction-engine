@@ -58,7 +58,32 @@ def parse_args():
         default="actions",
         help="Store no trajectories, action/event rows only, or all replay rows.",
     )
+    parser.add_argument(
+        "--warmup-prior-market",
+        action="store_true",
+        help="Seed each strategy's BTC momentum history from prior markets' CSVs "
+        "so long time-window metrics have data at market start. Backtest-only; "
+        "same flag as compare_strategies.py.",
+    )
+    parser.add_argument(
+        "--true-outcomes-csv",
+        default=None,
+        help="CSV with slug,true_outcome columns (see fetch_true_outcomes.py). "
+        "Markets listed resolve to the actual Polymarket outcome instead of "
+        "tick inference, which mixed-source strikes can corrupt.",
+    )
     return parser.parse_args()
+
+
+def load_true_outcomes(csv_path) -> dict[str, str]:
+    import csv as _csv
+    outcomes = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        for row in _csv.DictReader(f):
+            outcome = (row.get("true_outcome") or "").strip().lower()
+            if outcome in ("up", "down"):
+                outcomes[row["slug"]] = outcome
+    return outcomes
 
 
 def safe_name(value: str) -> str:
@@ -440,6 +465,7 @@ def run_grouped_strategy(
     liquidity_missing_depth_policy: str = "skip",
     trajectory_log_mode: str = "actions",
     warmup_prior_market: bool = False,
+    true_outcomes: dict[str, str] | None = None,
     verbose: bool = True,
 ) -> tuple["pd.DataFrame", "pd.DataFrame"]:
     """Simulate one strategy across `groups` sequential, non-overlapping chunks of
@@ -538,6 +564,7 @@ def run_grouped_strategy(
                 starting_balance=effective_balance,
                 order_usd=float(strategy_cfg.get("order_usd", 1.0)),
                 final_outcome=None,
+                final_outcome_override=(true_outcomes or {}).get(market_path.stem),
                 liquidity_aware_execution=True,
                 liquidity_depth_window_cents=liquidity_depth_window_cents,
                 liquidity_fill_fraction=liquidity_fill_fraction,
@@ -660,6 +687,8 @@ def main():
         liquidity_fill_fraction=args.liquidity_fill_fraction,
         liquidity_missing_depth_policy=args.liquidity_missing_depth_policy,
         trajectory_log_mode=args.trajectory_log_mode,
+        warmup_prior_market=args.warmup_prior_market,
+        true_outcomes=load_true_outcomes(args.true_outcomes_csv) if args.true_outcomes_csv else None,
     )
 
     run_dir.mkdir(parents=True, exist_ok=True)

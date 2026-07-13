@@ -1,0 +1,94 @@
+name: leader_chaser_distgate
+type: rule_based
+starting_balance: 100
+order_usd: 1
+
+# distgate variant: leader bet only when |BTC-strike| >= 0.05% (outside the
+# flip zone identified by analyze_lottery_tickets.py).
+# down_bias_chaser_lottery_sidepot_80_20_pct with the lottery leg REMOVED
+# (rules and pool, not just budget -- a zero-cap pool with live rules blocks
+# everything below it). Part of the no-lottery supporter search: which
+# non-lottery strategy is the best partner for the near-strike lottery leg?
+params:
+  default_usd_amount: 1
+  max_orders: 65
+  cooldown_ticks: 3
+
+  pools:
+    main:
+      max_pool_spend_pct: 0.8
+
+  rules:
+    - name: take_profit_up_position
+      all:
+        - metric: has_up_position
+          operator: "is"
+          value: true
+        - metric: up_price
+          operator: ">="
+          value: 0.95
+      action: sell_up
+
+    - name: take_profit_down_position
+      all:
+        - metric: has_down_position
+          operator: "is"
+          value: true
+        - metric: down_price
+          operator: ">="
+          value: 0.95
+      action: sell_down
+
+    - name: btc_below_price_to_beat_buy_down
+      pool: main
+      all:
+        - metric: btc_below_price_to_beat
+          operator: "is"
+          value: true
+        - metric: abs_btc_distance_to_price_to_beat_pct
+          operator: ">="
+          value: 0.05
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 30
+
+
+    - name: btc_above_price_to_beat_buy_up
+      pool: main
+      all:
+        - metric: btc_above_price_to_beat
+          operator: "is"
+          value: true
+        - metric: abs_btc_distance_to_price_to_beat_pct
+          operator: ">="
+          value: 0.05
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 30
+    - name: up_price_momentum_chase_buy_up
+      pool: main
+      all:
+        - metric: up_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: up_price
+          operator: "<="
+          value: 0.85
+      action: buy_up
+      token_amount: 20
+
+    - name: down_price_momentum_chase_buy_down
+      pool: main
+      all:
+        - metric: down_price_pct_change
+          operator: ">="
+          value: 3
+        - metric: down_price
+          operator: "<="
+          value: 0.85
+      action: buy_down
+      token_amount: 30

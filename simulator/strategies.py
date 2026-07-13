@@ -149,6 +149,7 @@ class RuleBasedStrategy(BaseStrategy):
         combine_matching_buys: bool = False,
         pools: dict[str, dict[str, Any]] | None = None,
         cooldown_scope: str = "global",
+        compute_all_metrics: bool = False,
     ):
         if cooldown_scope not in {"global", "per_rule"}:
             raise ValueError(f"Unknown cooldown_scope: {cooldown_scope!r}")
@@ -161,6 +162,7 @@ class RuleBasedStrategy(BaseStrategy):
         self.combine_matching_buys = combine_matching_buys
         self.pools = pools or {}
         self.cooldown_scope = cooldown_scope
+        self.compute_all_metrics = compute_all_metrics
         self._last_up_price: float | None = None
         self._last_down_price: float | None = None
         self._last_btc: float | None = None
@@ -172,6 +174,55 @@ class RuleBasedStrategy(BaseStrategy):
         self._up_series: list[tuple[float, float]] = []
         self._down_series: list[tuple[float, float]] = []
         self._btc_series: list[tuple[float, float]] = []
+
+        # Only compute the momentum windows this config's rules actually
+        # reference. Every tick otherwise builds all 23 time-windows x 3 series +
+        # 4 tick-windows x 3 series = 81 momentum values, ~95% of which a typical
+        # config never reads. The metric names below are looked up by rule
+        # conditions only, so filtering to the referenced set is decision-identical
+        # (an unreferenced momentum metric can never affect a rule). Long windows
+        # (e.g. 900s) are O(log n) bisect regardless of length -- the win is
+        # skipping unused windows, not skipping long ones.
+        self._used_metrics = self._collect_used_metrics()
+        self._btc_time_windows = self._filter_windows("momentum_{0}s", self.MOMENTUM_WINDOWS_S)
+        self._up_time_windows = self._filter_windows("up_price_momentum_{0}s", self.MOMENTUM_WINDOWS_S)
+        self._down_time_windows = self._filter_windows("down_price_momentum_{0}s", self.MOMENTUM_WINDOWS_S)
+        self._btc_tick_windows = self._filter_windows("momentum_{0}t", self.MOMENTUM_TICK_WINDOWS)
+        self._up_tick_windows = self._filter_windows("up_price_momentum_{0}t", self.MOMENTUM_TICK_WINDOWS)
+        self._down_tick_windows = self._filter_windows("down_price_momentum_{0}t", self.MOMENTUM_TICK_WINDOWS)
+        self._track_up_series = bool(self._up_time_windows or self._up_tick_windows)
+        self._track_down_series = bool(self._down_time_windows or self._down_tick_windows)
+
+    def _collect_used_metrics(self) -> set[str]:
+        """Metric names referenced by any rule condition (all / any / when / bare).
+        Conditions are flat {metric, operator, value} dicts -- there is no nesting."""
+        used: set[str] = set()
+
+        def add(condition: Any) -> None:
+            if isinstance(condition, dict):
+                name = condition.get("metric")
+                if isinstance(name, str):
+                    used.add(name)
+
+        for rule in self.rules:
+            if "all" in rule:
+                for condition in rule["all"]:
+                    add(condition)
+            elif "any" in rule:
+                for condition in rule["any"]:
+                    add(condition)
+            else:
+                add(rule.get("when", rule))
+        return used
+
+    def _filter_windows(self, name_template: str, windows) -> list[tuple[str, float | int]]:
+        """(metric_name, window) pairs for only the windows this config references."""
+        pairs = []
+        for window in windows:
+            name = name_template.format(int(window))
+            if self.compute_all_metrics or name in self._used_metrics:
+                pairs.append((name, window))
+        return pairs
 
     def decide(self, state: DecisionState) -> StrategyDecision:
         metrics = self._build_metrics(state)
@@ -337,8 +388,10 @@ class RuleBasedStrategy(BaseStrategy):
         btc = tick.btc_chainlink if tick.btc_chainlink is not None else tick.btc_binance
         now_time = tick.unix_time
 
-        self._record_momentum_sample(self._up_series, now_time, tick.up_price)
-        self._record_momentum_sample(self._down_series, now_time, tick.down_price)
+        if self._track_up_series:
+            self._record_momentum_sample(self._up_series, now_time, tick.up_price)
+        if self._track_down_series:
+            self._record_momentum_sample(self._down_series, now_time, tick.down_price)
         self._record_momentum_sample(self._btc_series, now_time, btc)
 
         metrics = {
@@ -352,30 +405,6 @@ class RuleBasedStrategy(BaseStrategy):
             "down_price_pct_change": pct_change(tick.down_price, self._last_down_price),
             "btc_price": btc,
             "btc_pct_change": pct_change(btc, self._last_btc),
-            **{
-                f"momentum_{int(window_s)}s": momentum_pct(self._btc_series, now_time, window_s) if btc is not None else None
-                for window_s in self.MOMENTUM_WINDOWS_S
-            },
-            **{
-                f"up_price_momentum_{int(window_s)}s": momentum_pct(self._up_series, now_time, window_s)
-                for window_s in self.MOMENTUM_WINDOWS_S
-            },
-            **{
-                f"down_price_momentum_{int(window_s)}s": momentum_pct(self._down_series, now_time, window_s)
-                for window_s in self.MOMENTUM_WINDOWS_S
-            },
-            **{
-                f"momentum_{ticks}t": momentum_pct_by_ticks(self._btc_series, ticks) if btc is not None else None
-                for ticks in self.MOMENTUM_TICK_WINDOWS
-            },
-            **{
-                f"up_price_momentum_{ticks}t": momentum_pct_by_ticks(self._up_series, ticks)
-                for ticks in self.MOMENTUM_TICK_WINDOWS
-            },
-            **{
-                f"down_price_momentum_{ticks}t": momentum_pct_by_ticks(self._down_series, ticks)
-                for ticks in self.MOMENTUM_TICK_WINDOWS
-            },
             "btc_distance_to_price_to_beat": distance(btc, tick.price_to_beat),
             "btc_distance_to_price_to_beat_pct": distance_pct(btc, tick.price_to_beat),
             "abs_btc_distance_to_price_to_beat": abs_distance(btc, tick.price_to_beat),
@@ -396,6 +425,20 @@ class RuleBasedStrategy(BaseStrategy):
             "down_position_value": state.down_tokens * tick.down_price if tick.down_price is not None else None,
             "orders_placed": state.orders_placed,
         }
+        # Only the referenced momentum windows (see __init__). btc-derived windows
+        # stay None when btc is missing, matching the previous dict-comprehensions.
+        for key, window_s in self._btc_time_windows:
+            metrics[key] = momentum_pct(self._btc_series, now_time, window_s) if btc is not None else None
+        for key, window_s in self._up_time_windows:
+            metrics[key] = momentum_pct(self._up_series, now_time, window_s)
+        for key, window_s in self._down_time_windows:
+            metrics[key] = momentum_pct(self._down_series, now_time, window_s)
+        for key, ticks in self._btc_tick_windows:
+            metrics[key] = momentum_pct_by_ticks(self._btc_series, ticks) if btc is not None else None
+        for key, ticks in self._up_tick_windows:
+            metrics[key] = momentum_pct_by_ticks(self._up_series, ticks)
+        for key, ticks in self._down_tick_windows:
+            metrics[key] = momentum_pct_by_ticks(self._down_series, ticks)
         for key, value in getattr(tick, "extra", {}).items():
             if key in metrics:
                 continue
