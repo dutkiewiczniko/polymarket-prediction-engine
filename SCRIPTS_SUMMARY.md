@@ -134,6 +134,33 @@ python ml_inference_replay.py --market-csv data/btc-updown-5m-1234567890.csv
   - `--final-outcome up|down`
   - `--log-every` (default: `1`)
 
+### `scripts/simulation/run_grouped_backtest.py`
+- Purpose: Simulate one strategy across `--groups` sequential, non-overlapping chunks of `--markets-per-group` markets, carrying a running master/reserve balance within each group (models playing many markets in a row on real bankroll).
+- Run:
+
+```bash
+python scripts/simulation/run_grouped_backtest.py \
+  --strategy-config configs/strategies/overnight_live_15/up_bias_chaser_tp095_cheap0025_tok20.yaml \
+  --balance-config configs/live_real_start110_reserve50_balance_bands.yaml \
+  --groups 5 --markets-per-group 20
+```
+
+- CLI options: `--markets-folder`, `--market-pattern`, `--strategy-config`, `--balance-config`, `--groups`, `--markets-per-group`, `--market-offset` (skip N sequential markets before selecting groups — same offset always yields the same markets), `--batch-id`, `--output-root`, `--min-order-usd`, `--liquidity-*`, `--trajectory-log-mode`.
+
+### `scripts/simulation/compare_strategies.py`
+- Purpose: A/B regression harness. Runs 2+ strategy configs across the *identical* sequential market groups (via `run_grouped_backtest.select_market_group`) so results are directly comparable — use this whenever a strategy/engine change should be checked before vs after. Default is 5 groups x 20 sequential markets.
+- Run:
+
+```bash
+python scripts/simulation/compare_strategies.py \
+  --strategy-configs configs/strategies/.../before.yaml configs/strategies/.../after.yaml \
+  --labels before after \
+  --balance-config configs/live_real_start110_reserve50_balance_bands.yaml
+```
+
+- CLI options: `--strategy-configs` (2+, required), `--labels`, `--markets-folder`, `--market-pattern`, `--groups` (default 5), `--markets-per-group` (default 20), `--market-offset` (default 0 = same markets every run, for reproducible A/B), `--random-market-offset` + `--seed` (pick a random offset instead, still identical across all configs in that run), `--balance-config`, liquidity options, `--trajectory-log-mode` (default `none`), `--batch-id`, `--output-root`.
+- Output: `comparison_summary.csv` / `comparison_report.html` under `runs/compare/<batch-id>/` with mean/median group reward, win rate, bust rate, and delta vs the first (baseline) config, plus each config's own full grouped report in a subfolder.
+
 ### `plot_simulated_run.py`
 - Purpose: Plot buy/sell decisions and optional balance curves from simulated trajectory CSVs.
 - Run a single CSV:

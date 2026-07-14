@@ -1,0 +1,47 @@
+batch_id: family_fixed100_50markets
+
+markets_folder: simulator_ready_markets_liquidity_all_20260519
+market_pattern: btc-updown-5m-*.csv
+
+output_root: runs
+
+max_markets: 50
+
+starting_balance: 100
+order_usd: 1
+compound_balance: false
+
+final_outcome:
+
+strategies:
+  - config: configs/strategies/family_fixed100/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: cheap_lottery_only
+
+  - config: configs/strategies/family_fixed100/down_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: down_bias_chaser
+
+  - config: configs/strategies/family_fixed100/down_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: down_bias_fader
+
+  - config: configs/strategies/family_fixed100/hybrid_price_signal_tp095_cheap0025.yaml
+    count: 1
+    label: hybrid_price_signal
+
+  - config: configs/strategies/family_fixed100/neutral_chaser_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: neutral_chaser
+
+  - config: configs/strategies/family_fixed100/neutral_fader_tp095_cheap0025.yaml
+    count: 1
+    label: neutral_fader
+
+  - config: configs/strategies/family_fixed100/up_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: up_bias_chaser
+
+  - config: configs/strategies/family_fixed100/up_bias_fader_tp095_cheap0025.yaml
+    count: 1
+    label: up_bias_fader

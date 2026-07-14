@@ -104,6 +104,7 @@ def run_simulation(
     starting_balance: float = 100.0,
     order_usd: float = 1.0,
     final_outcome: str | None = None,
+    final_outcome_override: str | None = None,
     liquidity_aware_execution: bool = False,
     liquidity_depth_window_cents: int = 2,
     liquidity_fill_fraction: float = 0.25,
@@ -119,7 +120,13 @@ def run_simulation(
     if not ticks:
         raise ValueError(f"No replayable ticks found in {market_csv}")
 
-    resolved_outcome = infer_final_outcome(ticks, fallback=final_outcome)
+    if final_outcome_override is not None:
+        # Actual resolution (e.g. fetched from Polymarket) beats tick inference:
+        # inference depends on the recorded strike, and mixed-source strikes
+        # fabricated 42/320 wrong outcomes on the 20260519 bench.
+        resolved_outcome = final_outcome_override.lower().strip()
+    else:
+        resolved_outcome = infer_final_outcome(ticks, fallback=final_outcome)
     portfolio = Portfolio(cash=starting_balance)
     market_start_balance = starting_balance
 

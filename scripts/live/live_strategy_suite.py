@@ -41,7 +41,7 @@ from simulator.liquidity import liquidity_execution_prices, liquidity_limits_for
 from simulator.batch import apply_drawdown_reserve_top_up, apply_reserve_top_up, resolve_effective_market_balance
 from simulator.models import DecisionState, MarketTick
 from simulator.portfolio import Portfolio
-from simulator.strategies import StrategyDecision
+from simulator.strategies import RuleBasedStrategy, StrategyDecision
 
 
 GAMMA_API = "https://gamma-api.polymarket.com"
@@ -51,6 +51,30 @@ RTDS_URL = "wss://ws-live-data.polymarket.com"
 BINANCE_WS = "wss://stream.binance.com:9443/ws/btcusdt@ticker"
 
 RUN_ROOT = Path("runs/live_strategy_suite")
+
+# How much BTC price history to carry across market boundaries for warm-starting
+# momentum windows: derived from the engine's own history buffer (longest window
+# + margin) so any window a config can reference is covered. BTC is one
+# continuous price stream, so prior-market samples are valid history (same
+# principle as --warmup-prior-market in backtests). Token price series must
+# NEVER be carried across markets -- they belong to the finished market and
+# reset each round.
+BTC_WARMUP_RETENTION_S = RuleBasedStrategy._MOMENTUM_HISTORY_BUFFER_S + 30.0
+
+
+def collect_btc_warmup_samples(binance_series, chainlink_series):
+    """Build the (unix_time, price) warmup list for BaseStrategy.seed_btc_history.
+
+    Chainlink is preferred wherever it has samples, with Binance backfilling the
+    earlier span -- mirroring both load_btc_warmup_samples (backtest warmup) and
+    RuleBasedStrategy._build_metrics, which use chainlink-first per tick.
+    """
+    if chainlink_series:
+        first_chainlink_ts = chainlink_series[0][0]
+        samples = [s for s in binance_series if s[0] < first_chainlink_ts]
+        samples.extend(chainlink_series)
+        return samples
+    return list(binance_series)
 MARKET_CSV_HEADER = [
     "timestamp",
     "unix_time",
@@ -189,7 +213,13 @@ def parse_args():
     parser.add_argument(
         "--balance-config",
         default="",
-        help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances.",
+        help="Optional batch-style config with starting_balance and effective_market_balance_bands for compounded live paper balances. "
+        "Compounding is on by default even without this -- see --no-compound-balance.",
+    )
+    parser.add_argument(
+        "--no-compound-balance",
+        action="store_true",
+        help="Disable balance compounding; every market starts fresh at --starting-balance instead of carrying the running total forward.",
     )
     parser.add_argument("--run-id", default="", help="Optional run folder name under runs/live_strategy_suite.")
     parser.add_argument("--port", type=int, default=5062, help="Local dashboard port.")
@@ -247,6 +277,14 @@ def parse_args():
         help="Write no trajectory CSVs, every strategy tick, or only rows where an action/event occurred.",
     )
     parser.add_argument(
+        "--no-btc-warmup",
+        action="store_true",
+        help="Disable carrying BTC price history across market boundaries (legacy cold-start "
+        "behavior: long momentum windows are None for the first minutes of every market). "
+        "Warm and cold results are not comparable -- backtest-validated momentum configs "
+        "(e.g. slow_plus_1t) were validated WARM.",
+    )
+    parser.add_argument(
         "--max-target-fallback-elapsed",
         type=float,
         default=5.0,
@@ -301,8 +339,8 @@ def parse_args():
     parser.add_argument(
         "--min-order-usd",
         type=float,
-        default=0.0,
-        help="Minimum notional for simulated/live-paper orders. Use 1.0 to mirror Polymarket's minimum order size.",
+        default=1.0,
+        help="Minimum notional for simulated/live-paper orders. Defaults to 1.0 to mirror Polymarket's minimum order size; use 0 to disable.",
     )
     return parser.parse_args()
 
@@ -923,7 +961,7 @@ class LiveStrategySuite:
         self.completed_markets = 0
         self.strategy_folder = Path(args.strategy_folder)
         self.balance_cfg = load_yaml(args.balance_config) if args.balance_config else {}
-        self.compound_balance = bool(args.balance_config)
+        self.compound_balance = not args.no_compound_balance
         self.base_starting_balance = float(
             self.balance_cfg.get("starting_balance", args.starting_balance)
             if self.compound_balance
@@ -962,6 +1000,7 @@ class LiveStrategySuite:
             "price_to_beat": None,
             "price_to_beat_source": "",
             "target_fallback_warning_logged": False,
+            "stale_chainlink_fallback_warning_logged": False,
             "market_question": "",
             "current_slug": "",
             "market_start": 0.0,
@@ -1079,6 +1118,17 @@ class LiveStrategySuite:
     def begin_market(self, market):
         self.end_market()
         self.current_market = market
+
+        warmup_samples = []
+        if not self.args.no_btc_warmup:
+            with self.lock:
+                cutoff = time.time() - BTC_WARMUP_RETENTION_S
+                self.state["btc_binance"][:] = [s for s in self.state["btc_binance"] if s[0] >= cutoff]
+                self.state["btc_chainlink"][:] = [s for s in self.state["btc_chainlink"] if s[0] >= cutoff]
+                warmup_samples = collect_btc_warmup_samples(
+                    self.state["btc_binance"], self.state["btc_chainlink"]
+                )
+
         for runtime in self.strategies:
             self.apply_reserve_top_up(runtime)
             if runtime.cooldown_markets_remaining > 0:
@@ -1092,6 +1142,8 @@ class LiveStrategySuite:
                     effective_balance = resolve_effective_market_balance(runtime.master_balance, self.balance_cfg)
                     market_starting_balance = effective_balance if effective_balance is not None else runtime.master_balance
             runtime.reset_for_market(market_starting_balance)
+            if warmup_samples:
+                runtime.strategy.seed_btc_history(warmup_samples)
 
         market_path = self.market_data_dir / f"{market['slug']}.csv"
         self.market_path = market_path
@@ -1106,12 +1158,15 @@ class LiveStrategySuite:
             self.state["price_to_beat"] = market.get("price_to_beat")
             self.state["price_to_beat_source"] = market.get("price_to_beat_source", "")
             self.state["target_fallback_warning_logged"] = False
+            self.state["stale_chainlink_fallback_warning_logged"] = False
             self.state["market_start"] = market["start_time"]
             self.state["market_end"] = market["end_time"]
             self.state["up_price"].clear()
             self.state["down_price"].clear()
-            self.state["btc_binance"].clear()
-            self.state["btc_chainlink"].clear()
+            if self.args.no_btc_warmup:
+                # Legacy cold-start behavior: wipe BTC history each market.
+                self.state["btc_binance"].clear()
+                self.state["btc_chainlink"].clear()
             self.state["orderbook_depth"] = blank_orderbook_depth()
             self.state["orderbook_hashes"] = {}
             self.state["paper_orderbook_consumed"] = blank_orderbook_consumption()
@@ -1123,6 +1178,13 @@ class LiveStrategySuite:
         print(f"Market #{self.state['markets_seen']}: {market['question']}")
         print(f"Strategies: {len(self.strategies)} from {self.strategy_folder}")
         print(f"Execution mode: {self.args.execution_mode}")
+        if self.args.no_btc_warmup:
+            print("BTC warmup: DISABLED (cold start; long momentum windows dead early in market)")
+        elif warmup_samples:
+            span_s = warmup_samples[-1][0] - warmup_samples[0][0]
+            print(f"BTC warmup: seeded {len(warmup_samples)} samples spanning {span_s:.0f}s")
+        else:
+            print("BTC warmup: no history yet (first market of run; windows warm up from here)")
         if self.compound_balance:
             active = [runtime.market_starting_balance for runtime in self.strategies]
             print(f"Compound balance config: {self.args.balance_config}")
@@ -1313,9 +1375,16 @@ class LiveStrategySuite:
         last_btc = None
         last_ptb = None
         with self.lock:
-            series = self.state["btc_chainlink"] or self.state["btc_binance"]
-            for _, price in series:
-                last_btc = price
+            # Only consider samples from the current market: BTC history is now
+            # retained across markets for momentum warmup, but the outcome must
+            # be judged on this market's own feed (matches the pre-warmup
+            # behavior, when the series was cleared each market).
+            market_start = self.state["market_start"]
+            for key in ("btc_chainlink", "btc_binance"):
+                in_market = [price for ts, price in self.state[key] if not market_start or ts >= market_start]
+                if in_market:
+                    last_btc = in_market[-1]
+                    break
             last_ptb = self.state["price_to_beat"]
         if last_btc is None or last_ptb is None:
             return "up"
@@ -1329,7 +1398,15 @@ class LiveStrategySuite:
             up_price = self.state["up_price"][-1][1] if self.state["up_price"] else None
             down_price = self.state["down_price"][-1][1] if self.state["down_price"] else None
             btc_binance = self.state["btc_binance"][-1][1] if self.state["btc_binance"] else None
-            btc_chainlink = self.state["btc_chainlink"][-1][1] if self.state["btc_chainlink"] else None
+            # Only surface chainlink from the current market: with BTC history now
+            # retained across markets (warmup), a sticky last-sample from a dead
+            # chainlink feed could otherwise masquerade as current for up to
+            # BTC_WARMUP_RETENTION_S; the engine prefers chainlink per tick.
+            btc_chainlink = None
+            if self.state["btc_chainlink"]:
+                chainlink_ts, chainlink_price = self.state["btc_chainlink"][-1]
+                if not market_start or chainlink_ts >= market_start:
+                    btc_chainlink = chainlink_price
             price_to_beat = self.state["price_to_beat"]
             price_to_beat_source = self.state["price_to_beat_source"]
             orderbook_depth = dict(self.state.get("orderbook_depth") or {})
@@ -1855,6 +1932,9 @@ def start_binance_loop(suite: LiveStrategySuite):
     asyncio.run(connect())
 
 
+CHAINLINK_IDLE_TIMEOUT_S = 20.0
+
+
 def start_chainlink_loop(suite: LiveStrategySuite):
     if websockets is None:
         print("Chainlink feed disabled: install the 'websockets' package to enable it.")
@@ -1869,9 +1949,18 @@ def start_chainlink_loop(suite: LiveStrategySuite):
                         "subscriptions": [{"topic": "crypto_prices_chainlink", "type": "*", "filters": ""}],
                     }))
                     print("Chainlink connected")
-                    async for msg in ws:
-                        if not suite.running:
-                            break
+                    while suite.running:
+                        # Polymarket's relay socket (RTDS_URL) can go silent without
+                        # closing the connection or raising -- `async for msg in ws`
+                        # would then just wait forever, letting price_to_beat fall
+                        # back onto whatever stale sample was last received (the
+                        # 2026-07-13 false-outcome bug, live for ~25 minutes across
+                        # 5 markets before anyone noticed). Force a reconnect if
+                        # nothing arrives for a while instead of trusting silence.
+                        try:
+                            msg = await asyncio.wait_for(ws.recv(), timeout=CHAINLINK_IDLE_TIMEOUT_S)
+                        except asyncio.TimeoutError:
+                            raise RuntimeError(f"no messages for {CHAINLINK_IDLE_TIMEOUT_S:.0f}s, forcing reconnect")
                         if msg == "PONG" or not msg.strip():
                             continue
                         try:
@@ -2564,9 +2653,21 @@ def refresh_target_for_market(suite: LiveStrategySuite, current_market, now_t: f
             and elapsed <= suite.args.max_target_fallback_elapsed
         )
         if suite.state["price_to_beat"] is None and fallback_allowed and suite.state["btc_chainlink"]:
-            suite.state["price_to_beat"] = suite.state["btc_chainlink"][-1][1]
-            suite.state["price_to_beat_source"] = "chainlink_start_fallback"
-            print(f"Price to beat fallback set from Chainlink at elapsed={elapsed:.3f}s: {suite.state['price_to_beat']:.2f}")
+            # Same staleness guard as latest_snapshot(): with BTC history retained
+            # across markets (warmup), a sticky last-sample from a dead Chainlink
+            # feed can otherwise masquerade as "now" for as long as the feed stays
+            # down, silently locking in a wrong price_to_beat for every market
+            # until it recovers (root cause of the 2026-07-13 false-outcome bug).
+            chainlink_ts, chainlink_price = suite.state["btc_chainlink"][-1]
+            market_start = suite.state["market_start"]
+            if not market_start or chainlink_ts >= market_start:
+                suite.state["price_to_beat"] = chainlink_price
+                suite.state["price_to_beat_source"] = "chainlink_start_fallback"
+                print(f"Price to beat fallback set from Chainlink at elapsed={elapsed:.3f}s: {suite.state['price_to_beat']:.2f}")
+            elif not suite.state.get("stale_chainlink_fallback_warning_logged"):
+                suite.state["stale_chainlink_fallback_warning_logged"] = True
+                stale_age = now_t - chainlink_ts
+                print(f"Skipping stale Chainlink fallback ({stale_age:.0f}s old, feed likely down); trying Binance fallback instead.")
         if (
             suite.state["price_to_beat"] is None
             and fallback_allowed

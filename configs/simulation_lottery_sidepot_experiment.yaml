@@ -1,0 +1,31 @@
+batch_id: experiment_lottery_sidepot_50m
+
+markets_folder: simulator_ready_markets_liquidity_all_20260519
+market_pattern: btc-updown-5m-*.csv
+
+output_root: runs
+
+max_markets: 50
+
+starting_balance: 100
+order_usd: 1
+compound_balance: false
+
+final_outcome:
+
+strategies:
+  - config: configs/strategies/family_fixed100/down_bias_chaser_tp095_cheap0025_tok20.yaml
+    count: 1
+    label: down_bias_chaser
+
+  - config: configs/strategies/family_fixed100/cheap_lottery_only_tp095_cheap0025_tok25.yaml
+    count: 1
+    label: cheap_lottery_only
+
+  - config: configs/strategies/family_fixed100/down_bias_chaser_lottery_sidepot.yaml
+    count: 1
+    label: down_bias_chaser_lottery_sidepot_70_30
+
+  - config: configs/strategies/family_fixed100/down_bias_chaser_lottery_sidepot_80_20.yaml
+    count: 1
+    label: down_bias_chaser_lottery_sidepot_80_20

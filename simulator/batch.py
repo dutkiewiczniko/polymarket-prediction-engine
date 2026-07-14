@@ -32,6 +32,26 @@ def discover_market_csvs(markets_folder: str | Path, pattern: str = "btc-updown-
     return files
 
 
+# Default effective-market-balance bands used whenever compounding is on and a
+# config doesn't specify its own effective_market_balance_pct/bands. This is the
+# "prop_tighter_after60" curve, the pattern already converged on across the most
+# live/grouped-backtest configs (grouped_start30/40/50/60, live_real_start110 x2,
+# live_start120/60_reserve): proportional up to $150 total balance, then scales
+# much more slowly above that.
+DEFAULT_EFFECTIVE_MARKET_BALANCE_BANDS = [
+    (1, 16, 5),
+    (16, 31, 10),
+    (31, 75, 15),
+    (75, 150, 30),
+    (150, 750, 60),
+    (750, 1500, 120),
+    (1500, 3000, 240),
+    (3000, 6000, 480),
+    (6000, 12000, 960),
+    (12000, None, 1920),
+]
+
+
 def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> float | None:
     def apply_cap(value: float) -> float:
         cap = batch_cfg.get("effective_market_balance_cap")
@@ -52,7 +72,7 @@ def resolve_effective_market_balance(master_balance: float, batch_cfg: dict) -> 
 
     bands = batch_cfg.get("effective_market_balance_bands")
     if not bands:
-        return None
+        bands = DEFAULT_EFFECTIVE_MARKET_BALANCE_BANDS
 
     for band in bands:
         if isinstance(band, (list, tuple)):
@@ -240,13 +260,13 @@ def run_batch(
     if market_offset < 0:
         raise ValueError("market_offset must be >= 0")
     compound_balance = bool(
-        batch_cfg.get("compound_balance", False) if compound_balance is None else compound_balance
+        batch_cfg.get("compound_balance", True) if compound_balance is None else compound_balance
     )
     liquidity_aware_execution = bool(batch_cfg.get("liquidity_aware_execution", False))
     liquidity_depth_window_cents = int(batch_cfg.get("liquidity_depth_window_cents", 2))
     liquidity_fill_fraction = float(batch_cfg.get("liquidity_fill_fraction", 0.25))
     liquidity_missing_depth_policy = str(batch_cfg.get("liquidity_missing_depth_policy", "skip"))
-    min_order_usd = float(batch_cfg.get("min_order_usd", 0.0))
+    min_order_usd = float(batch_cfg.get("min_order_usd", 1.0))
     write_trajectories = bool(batch_cfg.get("write_trajectories", True))
 
     markets = discover_market_csvs(markets_folder, market_pattern)
