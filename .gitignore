@@ -13,6 +13,10 @@ simready*/
 simulator_ready_markets/
 simulator_ready_markets*/
 simulator_ready_markets*.csv
+simulator_ready_official_clean_plus_live/
+flip_windows_v1/
+flip_windows_5c_v1/
+simulator_ready_live_20260713/
 models/
 /analysis/
 /market_data/

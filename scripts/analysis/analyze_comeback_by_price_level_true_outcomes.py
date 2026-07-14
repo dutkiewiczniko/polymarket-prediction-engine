@@ -58,6 +58,10 @@ SEC_BINS = [(5, 60, "late <60s"), (60, 180, "mid 60-180s"),
 
 NEAR_STRIKE_PCT = 0.05  # |BTC-strike|/strike% threshold for "near strike"
 
+# A "real comeback": the crashed side's price later climbs to >= this, a level
+# you could actually sell into. Overridable with --comeback-threshold.
+COMEBACK_THRESHOLD = 0.85
+
 
 def load_truth(csv_path: str) -> dict:
     truth = {}
@@ -90,10 +94,19 @@ def market_touches(csv_path: Path, true_outcome: str, min_sec: float,
             # --- first touch (one observation) ---
             i0 = idx[0]
             p0 = float(prices[i0])
+            # Did the side stage a real comeback -- price later climbs to
+            # >= COMEBACK_THRESHOLD, a level you could sell into (vs. merely
+            # scraping a win at resolution)? ev_sell models selling at the
+            # threshold if reached, else holding to resolution.
+            future_max = float(np.nanmax(prices[i0:])) if prices[i0:].size else p0
+            reached = future_max >= COMEBACK_THRESHOLD
+            ev_sell = ((COMEBACK_THRESHOLD / p0 - 1.0) if reached
+                       else ((1.0 / p0 - 1.0) if won else -1.0))
             rec = {
                 "market": csv_path.stem, "side": side, "level": level,
                 "entry_price": p0, "seconds_left": float(seconds_left[i0]),
                 "won": won, "payoff": (1.0 / p0 - 1.0) if won else -1.0,
+                "reached": reached, "ev_sell": ev_sell, "future_max": future_max,
             }
             if ref_lookup is not None:
                 rec["dist_pct"] = ref_lookup.get(int(times[i0]), np.nan)
@@ -150,6 +163,75 @@ def print_first_touch_table(df: pd.DataFrame, title: str) -> None:
         flag = "  <-- EV+" if ev > 0 else ""
         print(f"{fmt_level(level):>7} {n:>5} {flips:>6} {flip_pct:>5.1f}% "
               f"{100 * mean_p:>7.1f} {mean_p:>7.3f} {ev:>7.3f} {med_sec:>8.0f}{flag}")
+
+
+def print_comeback_table(df: pd.DataFrame, title: str) -> None:
+    """Flip = price later reached COMEBACK_THRESHOLD (a sellable comeback)."""
+    print(f"\n=== {title} (comeback = price later >= {COMEBACK_THRESHOLD}, "
+          f"sell there; else hold to resolution) ===")
+    print(f"{'level':>7} {'n':>5} {'reached':>8} {'reach%':>7} {'brkeven%':>8} "
+          f"{'mean_p':>7} {'EV/$1':>7} {'med_sec':>8}")
+    for level in LEVELS:
+        sub = df[df["level"] == level]
+        if sub.empty:
+            continue
+        n = len(sub)
+        reached = int(sub["reached"].sum())
+        mean_p = sub["entry_price"].mean()
+        brkeven = 100 * mean_p / COMEBACK_THRESHOLD  # need reach% > p/threshold
+        ev = sub["ev_sell"].mean()
+        med_sec = sub["seconds_left"].median()
+        flag = "  <-- EV+" if ev > 0 else ""
+        print(f"{fmt_level(level):>7} {n:>5} {reached:>8} "
+              f"{100 * reached / n:>6.1f}% {brkeven:>7.1f} {mean_p:>7.3f} "
+              f"{ev:>7.3f} {med_sec:>8.0f}{flag}")
+
+
+def ev_at_threshold(sub: pd.DataFrame, thr: float) -> float:
+    """EV/$1 of a take-profit at price `thr`: sell there if the side ever
+    reaches it after entry, else hold to resolution."""
+    p = sub["entry_price"].to_numpy()
+    reached = sub["future_max"].to_numpy() >= thr
+    won = sub["won"].to_numpy()
+    payoff = np.where(reached, thr / p - 1.0,
+                      np.where(won, 1.0 / p - 1.0, -1.0))
+    return float(payoff.mean())
+
+
+def print_threshold_sweep(df: pd.DataFrame) -> None:
+    """EV/$1 as a function of take-profit threshold, per entry level.
+
+    Shape reading: EV rising with threshold => prices trend (hold longer wins);
+    EV falling => prices mean-revert (take profit early wins); flat => calibrated
+    martingale, exit rule is irrelevant. T=1.00 == hold to resolution.
+    """
+    thrs = [0.80, 0.85, 0.90, 0.92, 0.95, 0.97, 0.99, 1.00]
+    print("\n=== take-profit threshold sweep: EV/$1 by (entry level x sell "
+          "threshold) ===")
+    print("  (best threshold per row marked *; T=1.00 = hold to resolution)")
+    print(f"{'level':>7}" + "".join(f"{('T'+f'{t:.2f}'):>8}" for t in thrs)
+          + f"{'best':>7}")
+    for level in LEVELS:
+        sub = df[df["level"] == level]
+        if sub.empty:
+            continue
+        evs = [ev_at_threshold(sub, t) for t in thrs]
+        best_i = int(np.argmax(evs))
+        cells = "".join((f"{ev:>7.3f}" + ("*" if i == best_i else " "))
+                        for i, ev in enumerate(evs))
+        print(f"{fmt_level(level):>7}{cells}{('T'+f'{thrs[best_i]:.2f}'):>7}")
+    # Pooled buckets: cheap moonshot zone vs the mid/rich zone, to see the
+    # aggregate best exit for each (they behave oppositely).
+    print("-" * 78)
+    for lbl, mask in [("<=0.05", df["level"] <= 0.05),
+                      (">=0.10", df["level"] >= 0.10),
+                      ("ALL", df["level"].notna())]:
+        sub = df[mask]
+        evs = [ev_at_threshold(sub, t) for t in thrs]
+        best_i = int(np.argmax(evs))
+        cells = "".join((f"{ev:>7.3f}" + ("*" if i == best_i else " "))
+                        for i, ev in enumerate(evs))
+        print(f"{lbl:>7}{cells}{('T'+f'{thrs[best_i]:.2f}'):>7}")
 
 
 def print_sec_bins(df: pd.DataFrame) -> None:
@@ -213,6 +295,7 @@ def print_any_touch_table(df: pd.DataFrame) -> None:
 
 
 def main():
+    global COMEBACK_THRESHOLD
     ap = argparse.ArgumentParser()
     ap.add_argument("--markets-folder", required=True)
     ap.add_argument("--true-outcomes-csv", required=True)
@@ -221,7 +304,11 @@ def main():
     ap.add_argument("--min-seconds-left", type=float, default=5.0)
     ap.add_argument("--spacing", type=float, default=10.0,
                     help="min seconds between any-touch tickets")
+    ap.add_argument("--comeback-threshold", type=float, default=COMEBACK_THRESHOLD,
+                    help="price a crashed side must later reach to count as a "
+                         "sellable comeback (default 0.85)")
     args = ap.parse_args()
+    COMEBACK_THRESHOLD = args.comeback_threshold
 
     truth = load_truth(args.true_outcomes_csv)
     folder = Path(args.markets_folder)
@@ -254,6 +341,8 @@ def main():
     print_first_touch_table(df, "FIRST-TOUCH combined (up + down sides)")
     print_first_touch_table(df[df["side"] == "down"], "FIRST-TOUCH down side only")
     print_first_touch_table(df[df["side"] == "up"], "FIRST-TOUCH up side only")
+    print_comeback_table(df, "COMEBACK combined (up + down sides)")
+    print_threshold_sweep(df)
     print_sec_bins(df)
     print_distance_split(df)
     print_any_touch_table(df)
