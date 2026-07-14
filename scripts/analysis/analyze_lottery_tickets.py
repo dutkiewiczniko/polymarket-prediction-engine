@@ -37,7 +37,13 @@ USECOLS = [
 ]
 
 
-def market_tickets(csv_path: Path, max_price: float, min_seconds_left: float, spacing_s: float) -> list[dict]:
+def market_tickets(
+    csv_path: Path,
+    max_price: float,
+    min_seconds_left: float,
+    spacing_s: float,
+    true_outcomes: dict[str, str] | None = None,
+) -> list[dict]:
     df = pd.read_csv(csv_path, usecols=USECOLS)
     btc = df["btc_chainlink"].where(df["btc_chainlink"].notna(), df["btc_binance"])
     df = df.assign(btc=btc)
@@ -45,7 +51,14 @@ def market_tickets(csv_path: Path, max_price: float, min_seconds_left: float, sp
     if df["btc"].dropna().empty or ptb.empty:
         return []
     strike = ptb.iloc[-1]
-    outcome = "up" if df["btc"].dropna().iloc[-1] >= strike else "down"
+    if true_outcomes is not None:
+        # Tick inference got 42/320 outcomes wrong on the mixed-strike bench;
+        # skip any market not covered by the truth CSV rather than guess.
+        outcome = true_outcomes.get(csv_path.stem)
+        if outcome not in ("up", "down"):
+            return []
+    else:
+        outcome = "up" if df["btc"].dropna().iloc[-1] >= strike else "down"
 
     times = df["unix_time"].to_numpy()
     btc_vals = df["btc"].to_numpy()
@@ -71,6 +84,12 @@ def market_tickets(csv_path: Path, max_price: float, min_seconds_left: float, sp
             window = btc_vals[(times >= times[i] - 60) & (times <= times[i])]
             window = window[~np.isnan(window)]
             range_pct = (window.max() - window.min()) / here_btc * 100 if len(window) > 1 else np.nan
+            # Per-source signed distances: resolution is Chainlink but Binance
+            # leads it -- a cheap ticket whose side Binance has ALREADY crossed
+            # toward is a look-ahead buy (mission lead #3).
+            bin_px = df["btc_binance"].iloc[i]
+            cl_px = df["btc_chainlink"].iloc[i]
+            sign = 1.0 if side == "up" else -1.0
             tickets.append({
                 "market_file": csv_path.name,
                 "side": side,
@@ -78,6 +97,10 @@ def market_tickets(csv_path: Path, max_price: float, min_seconds_left: float, sp
                 "seconds_left": seconds_left[i],
                 "abs_dist_pct": abs(here_btc - strike) / strike * 100,
                 "btc_range_60s_pct": range_pct,
+                # >0 means that source is already on the bought side's winning
+                # side of the strike (up: above, down: below)
+                "binance_side_dist_pct": sign * (bin_px - strike) / strike * 100 if not np.isnan(bin_px) else np.nan,
+                "chainlink_side_dist_pct": sign * (cl_px - strike) / strike * 100 if not np.isnan(cl_px) else np.nan,
                 "won": side == outcome,
                 "payoff": (1.0 / price - 1.0) if side == outcome else -1.0,
             })
@@ -104,13 +127,28 @@ def main():
     parser.add_argument("--max-price", type=float, default=0.025)
     parser.add_argument("--min-seconds-left", type=float, default=10.0)
     parser.add_argument("--ticket-spacing-s", type=float, default=15.0)
+    parser.add_argument(
+        "--true-outcomes-csv",
+        default=None,
+        help="CSV with slug,true_outcome columns (see fetch_true_outcomes.py). "
+        "Markets listed resolve to the actual Polymarket outcome; markets NOT "
+        "listed are skipped entirely (tick inference is untrustworthy).",
+    )
     args = parser.parse_args()
+
+    true_outcomes = None
+    if args.true_outcomes_csv:
+        truth = pd.read_csv(args.true_outcomes_csv)
+        true_outcomes = dict(zip(truth["slug"], truth["true_outcome"]))
+        print(f"True outcomes: {len(true_outcomes)} markets from {args.true_outcomes_csv}")
 
     folder = Path(args.markets_folder)
     files = sorted(folder.glob(args.market_pattern))
     all_tickets = []
     for f in files:
-        all_tickets.extend(market_tickets(f, args.max_price, args.min_seconds_left, args.ticket_spacing_s))
+        all_tickets.extend(
+            market_tickets(f, args.max_price, args.min_seconds_left, args.ticket_spacing_s, true_outcomes)
+        )
     t = pd.DataFrame(all_tickets)
     if t.empty:
         raise SystemExit("No tickets found.")

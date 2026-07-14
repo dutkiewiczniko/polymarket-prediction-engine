@@ -411,6 +411,11 @@ class RuleBasedStrategy(BaseStrategy):
             "abs_btc_distance_to_price_to_beat_pct": abs_distance_pct(btc, tick.price_to_beat),
             "btc_above_price_to_beat": btc is not None and tick.price_to_beat is not None and btc >= tick.price_to_beat,
             "btc_below_price_to_beat": btc is not None and tick.price_to_beat is not None and btc < tick.price_to_beat,
+            # Binance-specific signed distance: resolution is Chainlink but
+            # Binance leads it by seconds -- a cheap side that Binance has
+            # already crossed toward is a look-ahead buy (the engine's blended
+            # `btc` metric prefers Chainlink, hiding exactly that lead).
+            "btc_binance_distance_to_price_to_beat_pct": distance_pct(tick.btc_binance, tick.price_to_beat),
             "seconds_left": tick.seconds_left,
             "elapsed": tick.elapsed,
             "cash": state.cash,
